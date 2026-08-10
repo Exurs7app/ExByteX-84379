@@ -17718,16 +17718,20 @@ body.x-scrolling .tab-panel.active { display: block !important; }
     var EVM_RPC = {
         BEP20: [
             'https://bsc-rpc.publicnode.com',
+             'https://bsc.publicnode.com',
             'https://bsc-dataseed.binance.org',
             'https://bsc-dataseed1.binance.org',
             'https://bsc-dataseed2.binance.org',
             'https://bsc.meowrpc.com',
-            'https://1rpc.io/bnb'
+             'https://1rpc.io/bnb',
+             'https://bsc.llamarpc.com'
         ],
         ERC20: [
             'https://ethereum-rpc.publicnode.com',
+             'https://ethereum.publicnode.com',
             'https://1rpc.io/eth',
-            'https://cloudflare-eth.com'
+             'https://cloudflare-eth.com',
+             'https://eth.llamarpc.com'
         ]
     };
     var TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
@@ -17778,8 +17782,20 @@ body.x-scrolling .tab-panel.active { display: block !important; }
             })
             .finally(function(){ if(timer) clearTimeout(timer); });
     }
-    function depNormalizeTxID(value){
-        return String(value || '').trim().replace(/\s+/g,'');
+     function depNormalizeTxID(value, chain){
+         var raw = String(value || '').replace(/[\u200b-\u200d\ufeff]/g,'').trim();
+         /*
+          * Users often copy the transaction URL or a value containing a
+          * line break from a mobile explorer. Extract the hash first instead
+          * of deleting arbitrary characters and accidentally changing it.
+          */
+         var hash = raw.match(/(?:0x)?[a-f0-9]{64}/i);
+         if(hash){
+             var extracted = hash[0];
+             return chain === 'TRC20' ? extracted.replace(/^0x/i,'') :
+                 '0x' + extracted.replace(/^0x/i,'');
+         }
+         return raw.replace(/\s+/g,'');
     }
     function depValidTxID(chain, txID){
         if(chain === 'TRC20') return /^[a-f0-9]{64}$/i.test(txID);
@@ -17821,30 +17837,84 @@ body.x-scrolling .tab-panel.active { display: block !important; }
             return null;
         });
     }
-    function depExactTron(txID){
+     function depTronTransferResult(row, txID, address, contract){
+         row = row || {};
+         var token = row.token_info || row.tokenInfo || row.tokenTransferInfo || {};
+         var rowTo = row.to || row.to_address || row.toAddress ||
+             (row.contractData && (row.contractData.to_address || row.contractData.toAddress));
+         var rowContract = token.address || token.tokenId || token.contract_address ||
+             row.contract_address || row.contractAddress ||
+             (row.contractData && (row.contractData.contract_address || row.contractData.contractAddress));
+         if(String(rowTo || '').toLowerCase() !== String(address || '').toLowerCase()) return null;
+         if(String(rowContract || '').toLowerCase() !== String(contract || '').toLowerCase()) return null;
+         var decimals = Number(token.decimals || token.tokenDecimal || row.tokenDecimal);
+         if(!isFinite(decimals)) decimals = 6;
+         var rawValue = row.value;
+         if(rawValue == null) rawValue = row.amount;
+         if(rawValue == null) rawValue = row.amount_str;
+         if(rawValue == null && row.contractData) rawValue = row.contractData.amount;
+         var amount = Number(rawValue) / Math.pow(10, decimals);
+         if(!isFinite(amount) || amount <= 0) return null;
+         return {
+             txID:txID,
+             amount:amount,
+             timestamp:Number(row.block_timestamp || row.timestamp || row.blockTimestamp) || Date.now()
+         };
+     }
+     function depExactTronGrid(txID){
         var address = _depositAddresses.TRC20;
         var url = 'https://api.trongrid.io/v1/accounts/' + encodeURIComponent(address) +
             '/transactions/trc20?limit=200&only_to=true&order_by=block_timestamp,desc&contract_address=' +
             encodeURIComponent(USDT_CONTRACTS.TRC20);
         return depFetchJson(url).then(function(payload){
             var rows = payload && Array.isArray(payload.data) ? payload.data : [];
-            var target = address.toLowerCase();
-            var contract = USDT_CONTRACTS.TRC20.toLowerCase();
             for(var i=0;i<rows.length;i++){
                 var row = rows[i] || {};
                 if(String(row.transaction_id || '').toLowerCase() !== txID.toLowerCase()) continue;
-                if(String(row.to || '').toLowerCase() !== target) continue;
-                if(String(row.token_info && row.token_info.address || '').toLowerCase() !== contract) continue;
-                var decimals = Number(row.token_info && row.token_info.decimals);
-                if(!isFinite(decimals)) decimals = 6;
-                var amount = Number(row.value) / Math.pow(10, decimals);
-                if(isFinite(amount) && amount > 0){
-                    return {txID:txID,amount:amount,timestamp:Number(row.block_timestamp) || Date.now()};
-                }
+                 var result = depTronTransferResult(row, txID, address, USDT_CONTRACTS.TRC20);
+                 if(result) return result;
             }
             return null;
         });
     }
+     function depExactTronScan(txID){
+         var url = 'https://apilist.tronscanapi.com/api/transaction-info?hash=' +
+             encodeURIComponent(txID);
+         return depFetchJson(url).then(function(payload){
+             var rows = [];
+             if(payload && Array.isArray(payload.trc20TransferInfo)) rows = rows.concat(payload.trc20TransferInfo);
+             if(payload && Array.isArray(payload.trc20TransferInfos)) rows = rows.concat(payload.trc20TransferInfos);
+             if(payload && payload.tokenTransferInfo) rows.push(payload.tokenTransferInfo);
+             if(payload && Array.isArray(payload.tokenTransferInfo)) rows = rows.concat(payload.tokenTransferInfo);
+             if(payload && payload.contractData) rows.push(payload.contractData);
+             if(payload && payload.contract_data) rows.push(payload.contract_data);
+             for(var i=0;i<rows.length;i++){
+                 var result = depTronTransferResult(rows[i], txID, _depositAddresses.TRC20, USDT_CONTRACTS.TRC20);
+                 if(result) return result;
+             }
+             return null;
+         });
+     }
+     function depExactTron(txID){
+         /*
+          * TronGrid can temporarily return a rate-limit or gateway error.
+          * TronScan is an independent read-only fallback for the same hash.
+          * A provider failure is not treated as "TXID not found".
+          */
+         var checks = [
+             depExactTronGrid(txID).then(function(value){ return {value:value}; }).catch(function(error){ return {error:error}; }),
+             depExactTronScan(txID).then(function(value){ return {value:value}; }).catch(function(error){ return {error:error}; })
+         ];
+         return Promise.all(checks).then(function(results){
+             var lastError = null;
+             for(var i=0;i<results.length;i++){
+                 if(results[i].value) return results[i].value;
+                 if(results[i].error) lastError = results[i].error;
+             }
+             if(lastError && results.every(function(item){ return item.error; })) throw lastError;
+             return null;
+         });
+     }
     function depExactEvm(chain, txID){
         var address = _depositAddresses[chain];
         var contract = USDT_CONTRACTS[chain].toLowerCase();
@@ -18067,10 +18137,31 @@ body.x-scrolling .tab-panel.active { display: block !important; }
         return (window.toLatinDigits||String)(d.toLocaleDateString('en-CA-u-nu-latn') + ' ' +
             d.toLocaleTimeString('en-GB-u-nu-latn',{hour:'2-digit',minute:'2-digit',hour12:false}));
     }
-    function depIsVerified(txID){
-        var ids = depReadJson(VERIFIED_TX_KEY, []);
-        if(!Array.isArray(ids)) ids = [];
-        return ids.indexOf(txID) !== -1;
+     function depTxMatches(item, txID, chain, address){
+         if(!item || !item.txID || String(item.txID).toLowerCase() !== String(txID).toLowerCase()) return false;
+         if(chain && item.network && item.network !== chain) return false;
+         if(address && item.depositAddress && String(item.depositAddress).toLowerCase() !== String(address).toLowerCase()) return false;
+         return item.smartVerified === true || String(item.verifiedTxID || '').toLowerCase() === String(txID).toLowerCase();
+     }
+     function depForgetVerified(txID){
+         var ids = depReadJson(VERIFIED_TX_KEY, []);
+         if(!Array.isArray(ids)) ids = [];
+         depWriteJson(VERIFIED_TX_KEY, ids.filter(function(id){
+             return String(id || '').toLowerCase() !== String(txID || '').toLowerCase();
+         }));
+     }
+     function depIsVerified(txID, chain, address){
+         var history = depReadJson(DEP_KEY, []);
+         if(!Array.isArray(history)) history = [];
+         /*
+          * The history entry is authoritative. A marker without its matching
+          * entry can be left behind by a closed tab or a storage write error;
+          * remove that stale marker so a legitimate retry is not blocked.
+          */
+         var recorded = history.some(function(item){ return depTxMatches(item, txID, chain, address); });
+         if(recorded) return true;
+         depForgetVerified(txID);
+         return false;
     }
     function depRememberVerified(txID){
         var ids = depReadJson(VERIFIED_TX_KEY, []);
@@ -18092,7 +18183,7 @@ body.x-scrolling .tab-panel.active { display: block !important; }
             return;
         }
         var input = document.getElementById('depTxIDInput');
-        var txID = depNormalizeTxID(input && input.value);
+         var txID = depNormalizeTxID(input && input.value, chain);
         if(!txID){
             depUpdateHint('الصق TXID الخاص بعملية الإيداع أولاً.', '#f59e0b');
             depNotify('يرجى لصق TXID أولاً');
@@ -18121,14 +18212,12 @@ body.x-scrolling .tab-panel.active { display: block !important; }
                 }
                 return;
             }
-            if(depIsVerified(tx.txID)){
+             if(depIsVerified(tx.txID, chain, address)){
                 depUpdateHint('تمت معالجة هذه المعاملة مسبقاً.', '#f59e0b');
                 depNotify('هذه المعاملة تمت إضافتها إلى رصيدك مسبقاً');
                 if(typeof window._depositWizardOnFailure === 'function') window._depositWizardOnFailure('تمت معالجة هذا TXID مسبقاً ولا يمكن إضافته مرة أخرى.');
                 return;
             }
-
-            depRememberVerified(tx.txID);
 
             var history = depReadJson(DEP_KEY, []);
             if(!Array.isArray(history)) history = [];
@@ -18148,17 +18237,30 @@ body.x-scrolling .tab-panel.active { display: block !important; }
                 depositAddress:address
             });
             depWriteJson(DEP_KEY, history.slice(0,100));
-            if(typeof window.renderDepositHistory === 'function') window.renderDepositHistory();
+             /*
+              * Save the duplicate marker only after the verified history
+              * record has been written. A failed network attempt must never
+              * make the next legitimate attempt look duplicated.
+              */
+             depRememberVerified(tx.txID);
+             /*
+              * Network verification has already succeeded at this point.
+              * Rendering/toast/modal cleanup are presentation concerns and
+              * must not turn a successful verification into a network error.
+              */
+             try{
+                 if(typeof window.renderDepositHistory === 'function') window.renderDepositHistory();
+             }catch(uiError){}
 
             var success = 'تم التعرف على المعاملة. الرصيد قيد المعالجة لمدة دقيقة لتأكيدات البلوكشين.';
-            depUpdateHint(success, '#10b981');
-            depNotify(success, 'success');
+             try{ depUpdateHint(success, '#10b981'); }catch(uiError){}
+             try{ depNotify(success, 'success'); }catch(uiError){}
             if(typeof window._depositWizardOnSuccess === 'function'){
-                window._depositWizardOnSuccess(tx);
+                 try{ window._depositWizardOnSuccess(tx); }catch(uiError){}
                 window._depositWizardOnSuccess = null;
             }
             if(input) input.value = '';
-            if(typeof closeDepositModal === 'function') closeDepositModal();
+             try{ if(typeof closeDepositModal === 'function') closeDepositModal(); }catch(uiError){}
         }).catch(function(error){
             var message = error && (error.name === 'AbortError' || error.message === 'DEPOSIT_SEARCH_TIMEOUT' || error.message === 'EVM search timeout')
                 ? 'انتهت مهلة قراءة الشبكة. تحقق من الاتصال وحاول مرة أخرى.'
@@ -19266,10 +19368,16 @@ body.x-scrolling .tab-panel.active { display: block !important; }
     }
 
     function sanitizeTxid(value, chain){
-        var raw = String(value == null ? '' : value).replace(/\s+/g, '');
-        if(chain === 'TRC20') return raw.replace(/[^0-9a-fA-F]/g, '');
-        var prefix = /^0x/i.test(raw) ? '0x' : '';
-        return prefix + raw.slice(prefix ? 2 : 0).replace(/[^0-9a-fA-F]/g, '');
+         var raw = String(value == null ? '' : value).replace(/[\u200b-\u200d\ufeff]/g,'').trim();
+         var hash = raw.match(/(?:0x)?[a-f0-9]{64}/i);
+         if(hash){
+             var extracted = hash[0].replace(/^0x/i,'');
+             return chain === 'TRC20' ? extracted : '0x' + extracted;
+         }
+         raw = raw.replace(/\s+/g, '');
+         if(chain === 'TRC20') return raw.replace(/[^0-9a-fA-F]/g, '');
+         var prefix = /^0x/i.test(raw) ? '0x' : '';
+         return prefix + raw.slice(prefix ? 2 : 0).replace(/[^0-9a-fA-F]/g, '');
     }
 
     function renderWizard(){
