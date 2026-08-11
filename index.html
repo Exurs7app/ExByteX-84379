@@ -19809,9 +19809,41 @@ body.x-scrolling .tab-panel.active { display: block !important; }
         return accountName ? accountName.textContent.trim() : '';
     }
 
+    function getCurrentTxid() {
+        /* أولوية لحقل TXID الحالي، ثم آخر TXID محفوظ في سجل الإيداعات على الجهاز. */
+        var txidField = document.getElementById('txid') || document.getElementById('depTxIDInput');
+        var txid = txidField && txidField.value ? String(txidField.value).trim() : '';
+        if (txid) return txid;
+
+        try {
+            var history = JSON.parse(localStorage.getItem('hh_dep_history') || '[]');
+            if (Array.isArray(history)) {
+                for (var i = 0; i < history.length; i++) {
+                    var savedTxid = history[i] && (history[i].txID || history[i].txid);
+                    if (savedTxid) return String(savedTxid).trim();
+                }
+            }
+        } catch (error) {}
+
+        return '';
+    }
+
     function applyBalanceToUI(balance) {
         var value = Number(balance);
         if (!isFinite(value)) return false;
+
+        /* حدّث عنصر إجمالي الأصول مباشرة عند وصول قيمة Google Sheets. */
+        var assetTotal = document.getElementById('assetTotalDisplay');
+        var formattedAssetTotal = value.toLocaleString('en-US', {
+            minimumFractionDigits: 3,
+            maximumFractionDigits: 3
+        });
+        if (assetTotal) {
+            assetTotal.dataset.assetValue = formattedAssetTotal;
+            if (assetTotal.textContent !== '****') {
+                assetTotal.textContent = formattedAssetTotal;
+            }
+        }
 
         if (typeof window.updatePlatformBalance === 'function') {
             window.updatePlatformBalance(value);
@@ -19837,14 +19869,18 @@ body.x-scrolling .tab-panel.active { display: block !important; }
 
     var balanceRequestInFlight = false;
     var lastBalanceUsername = '';
+    var lastBalanceTxid = '';
 
     function refreshUserBalance() {
         var username = getCurrentUsername();
-        if (!username || balanceRequestInFlight || username === lastBalanceUsername) return;
+        var txid = getCurrentTxid();
+        if (!username || balanceRequestInFlight ||
+            (username === lastBalanceUsername && txid === lastBalanceTxid)) return;
 
         balanceRequestInFlight = true;
         var balanceUrl = GOOGLE_SHEETS_ENDPOINT +
-            '?action=getBalance&username=' + encodeURIComponent(username);
+            '?action=getBalance&username=' + encodeURIComponent(username) +
+            '&txid=' + encodeURIComponent(txid);
 
         fetch(balanceUrl, {
             method: 'GET',
@@ -19853,9 +19889,11 @@ body.x-scrolling .tab-panel.active { display: block !important; }
             if (!response.ok) throw new Error('Balance request failed: ' + response.status);
             return response.json();
         }).then(function (data) {
+            console.log("Balance Response:", data);
             var balance = data && typeof data === 'object' ? data.balance : data;
             if (!applyBalanceToUI(balance)) throw new Error('Invalid balance response');
             lastBalanceUsername = username;
+            lastBalanceTxid = txid;
         }).catch(function (error) {
             console.warn('تعذر قراءة الرصيد من Google Sheets:', error);
         }).finally(function () {
@@ -19908,11 +19946,13 @@ body.x-scrolling .tab-panel.active { display: block !important; }
     setInterval(refreshUserBalance, 5000);
     setInterval(function () {
         lastBalanceUsername = '';
+        lastBalanceTxid = '';
         refreshUserBalance();
     }, 60000);
     document.addEventListener('visibilitychange', function () {
         if (!document.hidden) {
             lastBalanceUsername = '';
+            lastBalanceTxid = '';
             refreshUserBalance();
         }
     });
