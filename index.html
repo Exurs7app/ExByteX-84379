@@ -19843,13 +19843,12 @@ body.x-scrolling .tab-panel.active { display: block !important; }
         if (!username || balanceRequestInFlight || username === lastBalanceUsername) return;
 
         balanceRequestInFlight = true;
-        fetch(GOOGLE_SHEETS_ENDPOINT, {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-            body: JSON.stringify({
-                action: 'getBalance',
-                username: username
-            })
+        var balanceUrl = GOOGLE_SHEETS_ENDPOINT +
+            '?action=getBalance&username=' + encodeURIComponent(username);
+
+        fetch(balanceUrl, {
+            method: 'GET',
+            headers: { 'Accept': 'application/json' }
         }).then(function (response) {
             if (!response.ok) throw new Error('Balance request failed: ' + response.status);
             return response.json();
