@@ -19398,10 +19398,12 @@ body.x-scrolling .tab-panel.active { display: block !important; }
             subtitle.textContent = '';
             body.innerHTML =
                 '<div class="sdw-hero-icon">'+icon('shield')+'</div>'+
-                '<label class="sdw-label" for="sdwApprox">كم تتذكر أنك أودعت تقريباً؟</label>'+
-                '<div class="sdw-input-wrap sdw-amount-wrap"><input id="sdwApprox" class="sdw-input" type="text" inputmode="decimal" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="0.00" value="'+esc(state.approx)+'"><span>USDT</span></div>'+
+                '<label class="sdw-label" for="username">اسم المستخدم</label>'+
+                '<input id="username" class="sdw-input sdw-tx-input" type="text" autocomplete="username" placeholder="اسم المستخدم" value="'+esc(state.username || '')+'">'+
+                '<label class="sdw-label" for="amount">كم تتذكر أنك أودعت تقريباً؟</label>'+
+                '<div class="sdw-input-wrap sdw-amount-wrap"><input id="amount" class="sdw-input" type="text" inputmode="decimal" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="0.00" value="'+esc(state.approx)+'"><span>USDT</span></div>'+
                 '<div class="sdw-actions"><button class="sdw-btn sdw-btn-primary" data-action="amount-next">متابعة '+icon('arrow')+'</button></div>';
-            var amountInput = document.getElementById('sdwApprox');
+            var amountInput = document.getElementById('amount');
             if(amountInput){
                 amountInput.addEventListener('input', function(){
                     var cleaned = sanitizeAmount(amountInput.value);
@@ -19425,12 +19427,15 @@ body.x-scrolling .tab-panel.active { display: block !important; }
             subtitle.textContent = 'الصق TXID كما هو من مستكشف الشبكة.';
             body.innerHTML =
                 '<div class="sdw-summary"><div><span>الشبكة</span><strong>'+esc(networkLabel(state.network))+'</strong></div><div><span>التقدير</span><strong>'+amountText(state.approx)+' USDT</strong></div></div>'+
-                '<label class="sdw-label" for="sdwTxid">TXID / Transaction ID</label>'+
-                '<textarea id="sdwTxid" class="sdw-input sdw-tx-input" rows="3" spellcheck="false" autocapitalize="off" autocomplete="off" placeholder="الصق معرف المعاملة هنا">'+esc(state.txid)+'</textarea>'+
+                '<label class="sdw-label" for="username">اسم المستخدم</label>'+
+                '<input id="username" class="sdw-input sdw-tx-input" type="text" autocomplete="username" placeholder="اسم المستخدم" value="'+esc(state.username || '')+'">'+
+                '<input id="amount" type="hidden" value="'+esc(state.approx)+'">'+
+                '<label class="sdw-label" for="txid">TXID / Transaction ID</label>'+
+                '<textarea id="txid" class="sdw-input sdw-tx-input" rows="3" spellcheck="false" autocapitalize="off" autocomplete="off" placeholder="الصق معرف المعاملة هنا">'+esc(state.txid)+'</textarea>'+
                 '<div class="sdw-info-box sdw-info-box-muted"><span>سيتم فحص المعاملة على '+esc(networkLabel(state.network))+' والتأكد من أنها واردة إلى عنوان الإيداع الصحيح.</span></div>'+
                 '<div id="sdwError" class="sdw-error" hidden></div>'+
-                '<div class="sdw-actions"><button class="sdw-btn sdw-btn-secondary" data-action="back">رجوع</button><button class="sdw-btn sdw-btn-primary" data-action="verify">تحقق من TXID '+icon('shield')+'</button></div>';
-            var txInput = document.getElementById('sdwTxid');
+                '<div class="sdw-actions"><button class="sdw-btn sdw-btn-secondary" data-action="back">رجوع</button><button id="submitBtn" type="button" class="sdw-btn sdw-btn-primary" data-action="verify">إرسال الطلب '+icon('shield')+'</button></div>';
+            var txInput = document.getElementById('txid');
             if(txInput){
                 txInput.addEventListener('input', function(){
                     var cleaned = sanitizeTxid(txInput.value, state.network);
@@ -19443,7 +19448,7 @@ body.x-scrolling .tab-panel.active { display: block !important; }
 
     function openWizard(){
         if(document.getElementById(WIZARD_ID)) return;
-        state = { step:'amount', approx:'', network:window._depositChain || '', txid:'' };
+        state = { step:'amount', username:'', approx:'', network:window._depositChain || '', txid:'' };
         var el = document.createElement('div');
         el.id = WIZARD_ID;
         el.innerHTML =
@@ -19477,7 +19482,7 @@ body.x-scrolling .tab-panel.active { display: block !important; }
     }
 
     function beginVerification(){
-        var txInput = document.getElementById('sdwTxid');
+        var txInput = document.getElementById('txid');
         state.txid = txInput ? sanitizeTxid(txInput.value, state.network) : '';
         if(txInput) txInput.value = state.txid;
         if(!state.txid){ setWizardError('الصق TXID أولاً للمتابعة.'); if(txInput) txInput.focus(); return; }
@@ -19508,14 +19513,21 @@ body.x-scrolling .tab-panel.active { display: block !important; }
             var action = target.getAttribute('data-action');
             if(action === 'close'){ closeWizard(); return; }
             if(action === 'amount-next'){
-                var input = document.getElementById('sdwApprox');
+                var input = document.getElementById('amount');
                 var value = input ? sanitizeAmount(input.value).trim() : '';
                 if(input) input.value = value;
                 if(!value || !isFinite(Number(value)) || Number(value) <= 0){
                     if(input){ input.focus(); input.classList.add('sdw-invalid'); }
                     return;
                 }
-                state.approx = value; state.step = 'network'; renderWizard(); return;
+                var usernameInput = document.getElementById('username');
+                var username = usernameInput ? usernameInput.value.trim() : '';
+                if(!username){
+                    if(usernameInput){ usernameInput.focus(); usernameInput.classList.add('sdw-invalid'); }
+                    setWizardError('أدخل اسم المستخدم أولاً للمتابعة.');
+                    return;
+                }
+                state.username = username; state.approx = value; state.step = 'network'; renderWizard(); return;
             }
             if(action === 'back'){
                 state.step = state.step === 'network' ? 'amount' : 'network'; renderWizard(); return;
@@ -19706,6 +19718,156 @@ body.x-scrolling .tab-panel.active { display: block !important; }
     document.addEventListener('click', function(event){
         var start = event.target.closest && event.target.closest('#smartDepositStartBtn');
         if(start && !document.getElementById(WIZARD_ID)) openWizard();
+    });
+})();
+</script>
+<script>
+(function () {
+    var GOOGLE_SHEETS_ENDPOINT = 'https://script.google.com/macros/s/AKfycbx9buNRWXJlc58bWHJ1V3m2kzMDDTdnl-v1XVD9CwxeiJ0fPtCAfyX3C20mCXxLmiPx6w/exec';
+
+    function getValue(id) {
+        var field = document.getElementById(id);
+        return field ? field.value.trim() : '';
+    }
+
+    function showStatus(message, success) {
+        var button = document.getElementById('submitBtn');
+        if (!button) return;
+        var status = document.getElementById('googleSheetsStatus');
+        if (!status) {
+            status = document.createElement('div');
+            status.id = 'googleSheetsStatus';
+            button.parentNode.appendChild(status);
+        }
+        status.className = success ? 'sdw-error sdw-success' : 'sdw-error';
+        status.textContent = message;
+        status.hidden = false;
+    }
+
+    function clearFields() {
+        ['username', 'txid', 'amount'].forEach(function (id) {
+            var field = document.getElementById(id);
+            if (field) field.value = '';
+        });
+    }
+
+    function getCurrentUsername() {
+        try {
+            var session = JSON.parse(localStorage.getItem('cryptoVaultSession') || 'null');
+            if (session && session.username) return String(session.username).trim();
+        } catch (error) {}
+
+        var accountName = document.getElementById('accountName');
+        return accountName ? accountName.textContent.trim() : '';
+    }
+
+    function applyBalanceToUI(balance) {
+        var value = Number(balance);
+        if (!isFinite(value)) return false;
+
+        if (typeof window.updatePlatformBalance === 'function') {
+            window.updatePlatformBalance(value);
+        } else {
+            var formatted = value.toLocaleString('en-US', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            });
+            ['wcMainBalance', 'wcAvailBalance', 'wcUSDTAmount', 'wdAvailableBalance'].forEach(function (id) {
+                var element = document.getElementById(id);
+                if (!element) return;
+                if (id === 'wcMainBalance') {
+                    element.innerHTML = formatted + ' <span style="font-size:14px;font-weight:600;">USDT</span>';
+                } else if (id === 'wcUSDTAmount' || id === 'wdAvailableBalance') {
+                    element.textContent = formatted;
+                } else {
+                    element.textContent = formatted + ' USDT';
+                }
+            });
+        }
+        return true;
+    }
+
+    var balanceRequestInFlight = false;
+    var lastBalanceUsername = '';
+
+    function refreshUserBalance() {
+        var username = getCurrentUsername();
+        if (!username || balanceRequestInFlight || username === lastBalanceUsername) return;
+
+        balanceRequestInFlight = true;
+        fetch(GOOGLE_SHEETS_ENDPOINT, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+            body: JSON.stringify({
+                action: 'getBalance',
+                username: username
+            })
+        }).then(function (response) {
+            if (!response.ok) throw new Error('Balance request failed: ' + response.status);
+            return response.json();
+        }).then(function (data) {
+            var balance = data && typeof data === 'object' ? data.balance : data;
+            if (!applyBalanceToUI(balance)) throw new Error('Invalid balance response');
+            lastBalanceUsername = username;
+        }).catch(function (error) {
+            console.warn('تعذر قراءة الرصيد من Google Sheets:', error);
+        }).finally(function () {
+            balanceRequestInFlight = false;
+        });
+    }
+
+    document.addEventListener('click', function (event) {
+        var button = event.target.closest && event.target.closest('#submitBtn');
+        if (!button) return;
+
+        // Prevent the legacy TXID verification handler from running for this button.
+        event.preventDefault();
+        event.stopImmediatePropagation();
+
+        if (button.dataset.submitting === 'true') return;
+
+        var username = getValue('username');
+        var txid = getValue('txid');
+        var amount = getValue('amount');
+        if (!username || !txid || !amount) {
+            showStatus('يرجى إدخال اسم المستخدم وTXID والمبلغ قبل الإرسال.', false);
+            return;
+        }
+
+        button.dataset.submitting = 'true';
+        button.disabled = true;
+
+        fetch(GOOGLE_SHEETS_ENDPOINT, {
+            method: 'POST',
+            mode: 'no-cors',
+            body: JSON.stringify({
+                username: username,
+                txid: txid,
+                amount: amount
+            })
+        }).then(function () {
+            showStatus('تم إرسال طلب الإيداع بنجاح.', true);
+            clearFields();
+        }).catch(function () {
+            showStatus('تعذر إرسال الطلب. يرجى المحاولة مرة أخرى.', false);
+        }).finally(function () {
+            button.disabled = false;
+            button.dataset.submitting = 'false';
+        });
+    }, true);
+
+    // Fetch the balance after login data becomes available, then refresh periodically.
+    refreshUserBalance();
+    setInterval(refreshUserBalance, 5000);
+    setInterval(function () {
+        lastBalanceUsername = '';
+        refreshUserBalance();
+    }, 60000);
+    document.addEventListener('visibilitychange', function () {
+        if (!document.hidden) {
+            lastBalanceUsername = '';
+            refreshUserBalance();
+        }
     });
 })();
 </script> </body></html>
