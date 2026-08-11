@@ -11294,11 +11294,7 @@ window.toLatinDigits = function(v){
     window._excGetBal = function(sym){
         if(sym === 'USDT'){
             var v = window._hhMainBalance;
-            if(typeof v !== 'number' || !isFinite(v)) {
-                var balanceKey = typeof window._getBalanceStorageKey === 'function'
-                    ? window._getBalanceStorageKey() : 'hh_main_balance';
-                v = parseFloat(localStorage.getItem(balanceKey) || '0') || 0;
-            }
+            if(typeof v !== 'number' || !isFinite(v)) v = parseFloat(localStorage.getItem('hh_main_balance') || '0') || 0;
             return Math.max(0, v);
         }
         return Math.max(0, readCoins()[sym] || 0);
@@ -11308,14 +11304,7 @@ window.toLatinDigits = function(v){
         val = Math.max(0, parseFloat(val) || 0);
         if(sym === 'USDT'){
             if(typeof window.updatePlatformBalance === 'function'){ window.updatePlatformBalance(val); }
-            else {
-                window._hhMainBalance = val;
-                try{
-                    var balanceKey = typeof window._getBalanceStorageKey === 'function'
-                        ? window._getBalanceStorageKey() : 'hh_main_balance';
-                    localStorage.setItem(balanceKey, String(val));
-                }catch(e){}
-            }
+            else { window._hhMainBalance = val; try{ localStorage.setItem('hh_main_balance', String(val)); }catch(e){} }
             var o = readCoins(); writeCoins(o);
             return;
         }
@@ -11867,11 +11856,7 @@ body.light-mode #wdOtpWarnText { color:#b45309 !important; }
                 window.updatePlatformBalance((Number(window._hhMainBalance) || 0) + item.refundAmount);
             }else{
                 window._hhMainBalance = (Number(window._hhMainBalance) || 0) + item.refundAmount;
-                try{
-                    var balanceKey = typeof window._getBalanceStorageKey === 'function'
-                        ? window._getBalanceStorageKey() : 'hh_main_balance';
-                    localStorage.setItem(balanceKey, String(window._hhMainBalance));
-                }catch(e){}
+                try{ localStorage.setItem('hh_main_balance', String(window._hhMainBalance)); }catch(e){}
             }
             changed = true;
 
@@ -12277,9 +12262,7 @@ body.light-mode #wdOtpWarnText { color:#b45309 !important; }
             if(typeof window.updatePlatformBalance === 'function') window.updatePlatformBalance(newBal);
             else{
                 window._hhMainBalance = newBal;
-                var balanceKey = typeof window._getBalanceStorageKey === 'function'
-                    ? window._getBalanceStorageKey() : 'hh_main_balance';
-                localStorage.setItem(balanceKey, String(newBal));
+                localStorage.setItem('hh_main_balance', String(newBal));
             }
         }catch(e){
             hist.shift();
@@ -17683,50 +17666,18 @@ body.x-scrolling .tab-panel.active { display: block !important; }
 })();
 </script> <script src="https://replit-cdn.com/replit-pill/replit-pill.global.js" data-repl-id="2c336509-8a83-4413-89b0-eeac60b05494"></script> <script>
 (function(){
-    /*
-     * Balance and deposit history are account data, not browser-global data.
-     * Use the current session identity in every key so logging into another
-     * account in the same browser can never reveal the previous account's
-     * balance or transactions.
-     */
-    function currentVaultIdentity(){
-        try{
-            var session = JSON.parse(localStorage.getItem('cryptoVaultSession') || 'null');
-            if(session){
-                var identity = session.uid || session.username || session.email;
-                if(identity) return String(identity).trim();
-            }
-        }catch(e){}
-        return '';
-    }
-    window._vaultCurrentUsername = function(){
-        try{
-            var session = JSON.parse(localStorage.getItem('cryptoVaultSession') || 'null');
-            if(session && session.username) return String(session.username).trim();
-        }catch(e){}
-        return '';
-    };
-    window._vaultScopedKey = function(base){
-        var identity = currentVaultIdentity();
-        return identity ? String(base) + ':' + encodeURIComponent(identity.toLowerCase()) : String(base);
-    };
-    window._getDepositHistoryKey = function(){ return window._vaultScopedKey('hh_dep_history'); };
-    window._getBalanceStorageKey = function(){ return window._vaultScopedKey('hh_main_balance'); };
-
     var BALANCE_KEY  = 'hh_main_balance';
     var DEP_KEY      = 'hh_dep_history';
-    function balanceKey(){ return window._getBalanceStorageKey(); }
-    function depositHistoryKey(){ return window._getDepositHistoryKey(); }
     var WD_KEY       = 'hh_wd_history';
 
     /* ---- تهيئة الرصيد ---- */
-    window._hhMainBalance = parseFloat(localStorage.getItem(balanceKey()) || '0') || 0;
+    window._hhMainBalance = parseFloat(localStorage.getItem(BALANCE_KEY) || '0') || 0;
 
     /* ---- تحديث جميع عناصر عرض الرصيد في المنصة ---- */
     window.updatePlatformBalance = function(newBal){
         newBal = Math.max(0, parseFloat(newBal) || 0);
         window._hhMainBalance = newBal;
-        localStorage.setItem(balanceKey(), newBal.toString());
+        localStorage.setItem(BALANCE_KEY, newBal.toString());
 
         var fmt  = newBal.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
         var fmt3 = newBal.toLocaleString('en-US',{minimumFractionDigits:3,maximumFractionDigits:3});
@@ -17842,10 +17793,7 @@ body.x-scrolling .tab-panel.active { display: block !important; }
         }catch(e){ return fallback; }
     }
     function depWriteJson(key, value){
-        try{
-            localStorage.setItem(key, JSON.stringify(value));
-            return true;
-        }catch(e){ return false; }
+        try{ localStorage.setItem(key, JSON.stringify(value)); }catch(e){}
     }
     function depNotify(message, type){
         if(typeof window.showToast === 'function') window.showToast(message, type || 'info');
@@ -18244,14 +18192,14 @@ body.x-scrolling .tab-panel.active { display: block !important; }
          return item.smartVerified === true || String(item.verifiedTxID || '').toLowerCase() === String(txID).toLowerCase();
      }
      function depForgetVerified(txID){
-          var ids = depReadJson(window._vaultScopedKey(VERIFIED_TX_KEY), []);
+         var ids = depReadJson(VERIFIED_TX_KEY, []);
          if(!Array.isArray(ids)) ids = [];
-          depWriteJson(window._vaultScopedKey(VERIFIED_TX_KEY), ids.filter(function(id){
+         depWriteJson(VERIFIED_TX_KEY, ids.filter(function(id){
              return String(id || '').toLowerCase() !== String(txID || '').toLowerCase();
          }));
      }
      function depIsVerified(txID, chain, address){
-          var history = depReadJson(depositHistoryKey(), []);
+         var history = depReadJson(DEP_KEY, []);
          if(!Array.isArray(history)) history = [];
          /*
           * The history entry is authoritative. A marker without its matching
@@ -18264,10 +18212,10 @@ body.x-scrolling .tab-panel.active { display: block !important; }
          return false;
     }
     function depRememberVerified(txID){
-         var ids = depReadJson(window._vaultScopedKey(VERIFIED_TX_KEY), []);
+        var ids = depReadJson(VERIFIED_TX_KEY, []);
         if(!Array.isArray(ids)) ids = [];
         if(ids.indexOf(txID) === -1) ids.unshift(txID);
-         depWriteJson(window._vaultScopedKey(VERIFIED_TX_KEY), ids.slice(0,500));
+        depWriteJson(VERIFIED_TX_KEY, ids.slice(0,500));
     }
 
     /* يبقى هذا الاسم متوافقاً مع أي استدعاء قديم في الواجهة؛ لا يوجد مبلغ يدخله المستخدم الآن. */
@@ -18298,59 +18246,9 @@ body.x-scrolling .tab-panel.active { display: block !important; }
             if(typeof window._depositWizardOnFailure === 'function') window._depositWizardOnFailure('صيغة TXID غير صحيحة لهذه الشبكة.');
             return;
         }
-
-        /*
-         * The request is recorded before any network call. This makes the
-         * user's submission durable immediately, even when a chain provider
-         * or Google Sheets is temporarily unavailable.
-         */
-        var sessionUsername = window._vaultCurrentUsername ? window._vaultCurrentUsername() : '';
-        var pendingHistory = depReadJson(depositHistoryKey(), []);
-        if(!Array.isArray(pendingHistory)) pendingHistory = [];
-        var duplicate = pendingHistory.some(function(item){
-            return item && item.txID &&
-                String(item.txID).toLowerCase() === String(txID).toLowerCase();
-        });
-        if(duplicate){
-            depUpdateHint('هذا TXID مسجل مسبقاً في سجل الإيداعات.', '#f59e0b');
-            depNotify('تم تسجيل هذا TXID مسبقاً');
-            if(typeof window._depositWizardOnFailure === 'function'){
-                window._depositWizardOnFailure('هذا TXID مسجل مسبقاً في سجل الإيداعات.');
-                window._depositWizardOnFailure = null;
-            }
-            return;
-        }
-        var pendingRecord = {
-            txID: txID,
-            amount: 0,
-            approxAmount: Number(window._depApproxAmount || 0) || null,
-            receivedAmount: null,
-            currency: 'USDT',
-            time: depTimeString(Date.now()),
-            status: 'pending',
-            submittedAt: Date.now(),
-            username: sessionUsername || '',
-            network: chain,
-            depositAddress: address,
-            smartDepositVersion: SMART_DEPOSIT_VERSION
-        };
-        pendingHistory.unshift(pendingRecord);
-        if(!depWriteJson(depositHistoryKey(), pendingHistory.slice(0,100))){
-            depUpdateHint('تعذر حفظ طلب الإيداع محلياً. حاول مرة أخرى.', '#ef4444');
-            depNotify('تعذر حفظ طلب الإيداع');
-            if(typeof window._depositWizardOnFailure === 'function'){
-                window._depositWizardOnFailure('تعذر حفظ طلب الإيداع محلياً. حاول مرة أخرى.');
-                window._depositWizardOnFailure = null;
-            }
-            return;
-        }
-        try{
-            if(typeof window.renderDepositHistory === 'function') window.renderDepositHistory();
-        }catch(uiError){}
-        depNotify('تم تسجيل طلب الإيداع وهو قيد المعالجة', 'info');
         _depositChecking = true;
         depSetButton(true);
-        depUpdateHint('تم تسجيل الطلب. جارٍ التحقق من المعاملة...', '#38bdf8');
+        depUpdateHint('جارٍ التحقق من المعاملة وإضافة المبلغ الفعلي...', '#38bdf8');
 
         depWithTimeout(depFindByTxID(chain, txID), 18000).then(function(tx){
             if(!tx){
@@ -18369,26 +18267,24 @@ body.x-scrolling .tab-panel.active { display: block !important; }
                 return;
             }
 
-            var history = depReadJson(depositHistoryKey(), []);
+            var history = depReadJson(DEP_KEY, []);
             if(!Array.isArray(history)) history = [];
-            var matched = null;
-            for(var h=0;h<history.length;h++){
-                if(history[h] && String(history[h].txID).toLowerCase() === String(tx.txID).toLowerCase()){
-                    matched = history[h];
-                    break;
-                }
-            }
-            if(!matched) throw new Error('DEPOSIT_RECORD_MISSING');
-            matched.amount = Number(tx.amount) || 0;
-            matched.time = matched.time || depTimeString(tx.timestamp);
-            matched.smartVerified = true;
-            matched.smartDepositVersion = SMART_DEPOSIT_VERSION;
-            matched.verifiedTxID = tx.txID;
-            matched.verificationAcceptedAt = Date.now();
-            matched.network = chain;
-            matched.depositAddress = address;
-            matched.username = matched.username || sessionUsername || '';
-            depWriteJson(depositHistoryKey(), history.slice(0,100));
+            history.unshift({
+                txID:tx.txID,
+                amount:tx.amount,
+                approxAmount:Number(window._depApproxAmount || 0) || null,
+                currency:'USDT',
+                time:depTimeString(tx.timestamp),
+                status:'pending',
+                pendingUntil:Date.now() + 60000,
+                smartVerified:true,
+                smartDepositVersion:SMART_DEPOSIT_VERSION,
+                verifiedTxID:tx.txID,
+                verificationAcceptedAt:Date.now(),
+                network:chain,
+                depositAddress:address
+            });
+            depWriteJson(DEP_KEY, history.slice(0,100));
              /*
               * Save the duplicate marker only after the verified history
               * record has been written. A failed network attempt must never
@@ -18404,7 +18300,7 @@ body.x-scrolling .tab-panel.active { display: block !important; }
                  if(typeof window.renderDepositHistory === 'function') window.renderDepositHistory();
              }catch(uiError){}
 
-             var success = 'تم التحقق من TXID. المعاملة قيد المعالجة حتى يصل اعتماد الرصيد من Google Sheets.';
+            var success = 'تم التعرف على المعاملة. الرصيد قيد المعالجة لمدة دقيقة لتأكيدات البلوكشين.';
              try{ depUpdateHint(success, '#10b981'); }catch(uiError){}
              try{ depNotify(success, 'success'); }catch(uiError){}
             if(typeof window._depositWizardOnSuccess === 'function'){
@@ -18434,7 +18330,7 @@ body.x-scrolling .tab-panel.active { display: block !important; }
     window.renderDepositHistory = function(){
         var list = document.getElementById('depHistoryList');
         if(!list) return;
-         var hist = depReadJson(depositHistoryKey(), []);
+        var hist = JSON.parse(localStorage.getItem(DEP_KEY) || '[]');
 
         /* حالة فارغة */
         if(hist.length === 0){
@@ -18456,7 +18352,7 @@ body.x-scrolling .tab-panel.active { display: block !important; }
 
         hist.forEach(function(item, idx){
             var isPending  = item.status === 'pending';
-             var amtFmt     = parseFloat(item.amount || item.approxAmount || 0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:6});
+            var amtFmt     = parseFloat(item.amount || 0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:6});
             var txShort    = item.txID ? (item.txID.slice(0,8)+'...'+item.txID.slice(-6)) : '──';
             var netMap     = {TRC20:'TRC20', ERC20:'ERC20', BEP20:'BEP20'};
             var netLabel   = netMap[item.network] || '';
@@ -18531,7 +18427,7 @@ body.x-scrolling .tab-panel.active { display: block !important; }
 
     /* ---- تفاصيل عملية إيداع بالنقر على الكارد ---- */
     window.showDepositTxDetails = function(idx){
-         var hist = depReadJson(depositHistoryKey(), []);
+        var hist = JSON.parse(localStorage.getItem('hh_dep_history') || '[]');
         var item = hist[idx];
         if(!item) return;
 
@@ -18694,7 +18590,7 @@ body.x-scrolling .tab-panel.active { display: block !important; }
     /* نسخ رابط المعاملة */
     window.depTxCopyLink = function(txID){
         var explorerBasesMap2 = {TRC20:'https://tronscan.org/#/transaction/', ERC20:'https://etherscan.io/tx/', BEP20:'https://bscscan.com/tx/'};
-         var hist2 = depReadJson(depositHistoryKey(), []);
+        var hist2 = JSON.parse(localStorage.getItem('hh_dep_history') || '[]');
         var found = null;
         for(var i=0;i<hist2.length;i++){ if(hist2[i].txID===txID){ found=hist2[i]; break; } }
         var net = found ? (found.network || 'TRC20') : 'TRC20';
@@ -18713,7 +18609,7 @@ body.x-scrolling .tab-panel.active { display: block !important; }
 
     /* تنزيل إيصال الإيداع كملف نصي */
     window.depTxDownload = function(idx){
-         var hist3 = depReadJson(depositHistoryKey(), []);
+        var hist3 = JSON.parse(localStorage.getItem('hh_dep_history') || '[]');
         var item = hist3[idx];
         if(!item) return;
         var netNamesMap2 = {TRC20:'Tron (TRC20)', ERC20:'Ethereum (ERC20)', BEP20:'BNB Smart Chain (BEP20)'};
@@ -19177,11 +19073,7 @@ body.x-scrolling .tab-panel.active { display: block !important; }
             window.updatePlatformBalance(balance + amount);
         } else {
             window._hhMainBalance = balance + amount;
-            try {
-                var balanceKey = typeof window._getBalanceStorageKey === 'function'
-                    ? window._getBalanceStorageKey() : 'hh_main_balance';
-                localStorage.setItem(balanceKey, String(window._hhMainBalance));
-            } catch(e){}
+            try { localStorage.setItem('hh_main_balance', String(window._hhMainBalance)); } catch(e){}
         }
         if(window._balances) window._balances.USDT = num(window._hhMainBalance);
         addProfitHistory(name, amount, cycleNumber, immediate ? 'عائد التفعيل الأول' : 'عائد دورة المزامنة');
@@ -19413,15 +19305,12 @@ body.x-scrolling .tab-panel.active { display: block !important; }
 
     function readHistory(){
         try{
-            var value = JSON.parse(localStorage.getItem(window._getDepositHistoryKey()) || '[]');
+            var value = JSON.parse(localStorage.getItem(DEP_KEY) || '[]');
             return Array.isArray(value) ? value : [];
         }catch(e){ return []; }
     }
     function writeHistory(items){
-        try{
-            localStorage.setItem(window._getDepositHistoryKey(), JSON.stringify(items.slice(0,100)));
-            return true;
-        }catch(e){ return false; }
+        try{ localStorage.setItem(DEP_KEY, JSON.stringify(items.slice(0,100))); }catch(e){}
     }
     function esc(value){
         return String(value == null ? '' : value).replace(/[&<>"']/g, function(ch){
@@ -19642,9 +19531,6 @@ body.x-scrolling .tab-panel.active { display: block !important; }
 
     function beginVerification(){
         var txInput = document.getElementById('txid');
-        var usernameInput = document.getElementById('username');
-        if(usernameInput && usernameInput.value.trim()) state.username = usernameInput.value.trim();
-        if(window._vaultCurrentUsername && window._vaultCurrentUsername()) state.username = window._vaultCurrentUsername();
         state.txid = txInput ? sanitizeTxid(txInput.value, state.network) : '';
         if(txInput) txInput.value = state.txid;
         if(!state.txid){ setWizardError('الصق TXID أولاً للمتابعة.'); if(txInput) txInput.focus(); return; }
@@ -19724,12 +19610,48 @@ body.x-scrolling .tab-panel.active { display: block !important; }
     }
 
     function settlePendingDeposits(){
-        /*
-         * A timer must never turn a pending deposit into a completed one.
-         * Completion is performed only by the Google Sheets reconciliation
-         * below, after the network verifier has accepted the same TXID.
-         */
+        var now = Date.now(), history = readHistory(), changed = false, settled = [];
+        var safeHistory = history.filter(function(item){
+            return !(item && item.status === 'pending' &&
+                item.smartDepositVersion !== SMART_DEPOSIT_VERSION);
+        });
+        if(safeHistory.length !== history.length){
+            history = safeHistory;
+            changed = true;
+        }
+        history.forEach(function(item){
+            /*
+             * Only records created by a successful TXID verification may
+             * ever settle. Older/local records without this marker are
+             * intentionally ignored and can never credit the balance.
+             */
+            if(item.status !== 'pending' ||
+               item.smartVerified !== true ||
+               item.smartDepositVersion !== SMART_DEPOSIT_VERSION ||
+               !item.txID ||
+               item.verifiedTxID !== item.txID ||
+               !item.verificationAcceptedAt ||
+               Number(item.pendingUntil || 0) > now) return;
+            var actual = Number(item.amount) || 0;
+            if(actual <= 0) return;
+            item.status = 'completed';
+            item.settledAt = now;
+            item.confirmationNote = 'تم اعتماد المبلغ الفعلي من بيانات البلوكشين';
+            settled.push(actual);
+            changed = true;
+        });
+        if(!changed) return;
+        writeHistory(history);
+        var total = settled.reduce(function(sum, value){ return sum + value; }, 0);
+        var current = Number(window._hhMainBalance);
+        if(!isFinite(current)) current = Number(localStorage.getItem(BALANCE_KEY) || 0) || 0;
+        if(typeof window.updatePlatformBalance === 'function') window.updatePlatformBalance(current + total);
+        else {
+            window._hhMainBalance = current + total;
+            try{ localStorage.setItem(BALANCE_KEY, String(current + total)); }catch(e){}
+        }
         if(typeof window.renderDepositHistory === 'function') window.renderDepositHistory();
+        if(typeof window.toast === 'function') window.toast('اكتمل تأكيد الإيداع وإضافة المبلغ الفعلي إلى رصيدك','success');
     }
 
     var originalClose = window.closeDepositModal;
@@ -19839,7 +19761,7 @@ body.x-scrolling .tab-panel.active { display: block !important; }
     document.head.appendChild(style);
     installUI();
     settlePendingDeposits();
-    setInterval(settlePendingDeposits, 5000);
+    setInterval(settlePendingDeposits, 1000);
     if(typeof window.renderDepositHistory === 'function') window.renderDepositHistory();
     document.addEventListener('click', function(event){
         var start = event.target.closest && event.target.closest('#smartDepositStartBtn');
@@ -19894,7 +19816,7 @@ body.x-scrolling .tab-panel.active { display: block !important; }
         if (txid) return txid;
 
         try {
-            var history = JSON.parse(localStorage.getItem(window._getDepositHistoryKey()) || '[]');
+            var history = JSON.parse(localStorage.getItem('hh_dep_history') || '[]');
             if (Array.isArray(history)) {
                 for (var i = 0; i < history.length; i++) {
                     var savedTxid = history[i] && (history[i].txID || history[i].txid);
@@ -19904,67 +19826,6 @@ body.x-scrolling .tab-panel.active { display: block !important; }
         } catch (error) {}
 
         return '';
-    }
-
-    function sheetValue(data, names) {
-        if (!data || typeof data !== 'object') return null;
-        for (var i = 0; i < names.length; i++) {
-            var value = data[names[i]];
-            if (value !== undefined && value !== null && value !== '') return value;
-        }
-        return null;
-    }
-
-    function sheetTransactionAmount(data, item) {
-        var nested = data && data.transaction && typeof data.transaction === 'object'
-            ? data.transaction : null;
-        var raw = sheetValue(data, [
-            'receivedAmount', 'creditedAmount', 'depositAmount', 'amount',
-            'credit', 'received', 'credited'
-        ]);
-        if ((raw === null || raw === undefined) && nested) {
-            raw = sheetValue(nested, ['receivedAmount', 'creditedAmount', 'depositAmount', 'amount', 'value']);
-        }
-        var amount = Number(raw);
-        if (!isFinite(amount) || amount <= 0) amount = Number(item && (item.amount || item.approxAmount));
-        return isFinite(amount) && amount > 0 ? amount : null;
-    }
-
-    function reconcileDepositFromSheet(data, username, txid) {
-        if (!data || typeof data !== 'object') return false;
-        if (data.success === false || data.verified === false || data.found === false ||
-            ['failed', 'rejected', 'not_found', 'pending'].indexOf(String(data.status || '').toLowerCase()) !== -1) {
-            return false;
-        }
-        var key = window._getDepositHistoryKey();
-        var history;
-        try { history = JSON.parse(localStorage.getItem(key) || '[]'); } catch (e) { history = []; }
-        if (!Array.isArray(history)) history = [];
-        var normalizedTxid = String(txid || '').replace(/^0x/i, '').toLowerCase();
-        var changed = false;
-        var completed = false;
-        history.forEach(function(item) {
-            if (!item || !item.txID) return;
-            var itemTxid = String(item.txID).replace(/^0x/i, '').toLowerCase();
-            if (itemTxid !== normalizedTxid || item.username && String(item.username).trim() !== String(username).trim()) return;
-            if (item.status !== 'pending' || item.smartVerified !== true) return;
-            var received = sheetTransactionAmount(data, item);
-            item.receivedAmount = received;
-            if (received && received > 0) item.amount = received;
-            item.status = 'completed';
-            item.completedAt = Date.now();
-            item.confirmationSource = 'Google Sheets';
-            item.confirmationNote = 'تم استلام واعتماد الرصيد من Google Sheets';
-            changed = true;
-            completed = true;
-        });
-        if (!changed) return completed;
-        try { localStorage.setItem(key, JSON.stringify(history.slice(0, 100))); } catch (e) { return false; }
-        if (typeof window.renderDepositHistory === 'function') window.renderDepositHistory();
-        if (typeof window.showToast === 'function') {
-            window.showToast('اكتمل الإيداع وتم تحديث الرصيد المستلم', 'success');
-        }
-        return completed;
     }
 
     function applyBalanceToUI(balance) {
@@ -20009,33 +19870,8 @@ body.x-scrolling .tab-panel.active { display: block !important; }
     var balanceRequestInFlight = false;
     var lastBalanceUsername = '';
     var lastBalanceTxid = '';
-    var lastScopedIdentity = '';
-
-    function syncCurrentAccountScope() {
-        var identity = '';
-        try {
-            var session = JSON.parse(localStorage.getItem('cryptoVaultSession') || 'null');
-            identity = session && (session.uid || session.username || session.email)
-                ? String(session.uid || session.username || session.email).trim().toLowerCase()
-                : '';
-        } catch (error) {}
-        if (identity === lastScopedIdentity) return;
-        lastScopedIdentity = identity;
-        var scopedBalanceKey = window._getBalanceStorageKey();
-        var scopedBalance = parseFloat(localStorage.getItem(scopedBalanceKey) || '0') || 0;
-        window._hhMainBalance = scopedBalance;
-        lastBalanceUsername = '';
-        lastBalanceTxid = '';
-        if (typeof window.updatePlatformBalance === 'function') {
-            window.updatePlatformBalance(scopedBalance);
-        }
-        if (typeof window.renderDepositHistory === 'function') {
-            window.renderDepositHistory();
-        }
-    }
 
     function refreshUserBalance() {
-        syncCurrentAccountScope();
         var username = getCurrentUsername();
         var txid = getCurrentTxid();
         if (!username || balanceRequestInFlight ||
@@ -20053,18 +19889,11 @@ body.x-scrolling .tab-panel.active { display: block !important; }
             if (!response.ok) throw new Error('Balance request failed: ' + response.status);
             return response.json();
         }).then(function (data) {
-            /* The JSON response is also the reconciliation signal for the
-             * exact TXID submitted by the current session user. */
-            var reconciled = reconcileDepositFromSheet(data, username, txid);
+            console.log("Balance Response:", data);
             var balance = data && typeof data === 'object' ? data.balance : data;
             if (!applyBalanceToUI(balance)) throw new Error('Invalid balance response');
-            /* Retry until the network verifier has marked the same record as
-             * verified; this prevents a Sheets response arriving too early
-             * from leaving the history permanently pending. */
-            if (reconciled || !txid) {
-                lastBalanceUsername = username;
-                lastBalanceTxid = txid;
-            }
+            lastBalanceUsername = username;
+            lastBalanceTxid = txid;
         }).catch(function (error) {
             console.warn('تعذر قراءة الرصيد من Google Sheets:', error);
         }).finally(function () {
@@ -20075,11 +19904,6 @@ body.x-scrolling .tab-panel.active { display: block !important; }
     document.addEventListener('click', function (event) {
         var button = event.target.closest && event.target.closest('#submitBtn');
         if (!button) return;
-
-        /* The smart deposit wizard owns this button. Let its bubble handler
-         * run the on-chain verifier; the legacy Google Sheets POST below is
-         * only for the old standalone form. */
-        if (button.closest && button.closest('#smartDepositWizard')) return;
 
         // Prevent the legacy TXID verification handler from running for this button.
         event.preventDefault();
