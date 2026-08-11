@@ -8565,6 +8565,7 @@ window.toLatinDigits = function(v){
             }
 
             function updatePlatformUI(user) {
+                if (!user || typeof user !== 'object') return;
                 /*
                  * بعض عناصر الحساب القديمة لم تعد موجودة في الواجهة الحالية.
                  * لا تحاول الكتابة إلى عنصر غير موجود، وإلا سيتوقف تنفيذ الدالة
@@ -8627,9 +8628,15 @@ window.toLatinDigits = function(v){
                 if (priceInterval) clearInterval(priceInterval);
                 priceInterval = setInterval(() => {
                     updateAllPrices();
-                    document.getElementById('lastSync').textContent = 'قبل ' + Math.floor(Math.random() * 30 + 1) +
-                        ' ثانية';
-                    document.getElementById('lastBlock').textContent = '#847,' + Math.floor(Math.random() * 900 + 100);
+                    const lastSync = document.getElementById('lastSync');
+                    if (lastSync) {
+                        lastSync.textContent = 'قبل ' + Math.floor(Math.random() * 30 + 1) +
+                            ' ثانية';
+                    }
+                    const lastBlock = document.getElementById('lastBlock');
+                    if (lastBlock) {
+                        lastBlock.textContent = '#847,' + Math.floor(Math.random() * 900 + 100);
+                    }
                 }, 4000);
             }
 
@@ -8640,18 +8647,23 @@ window.toLatinDigits = function(v){
                     const holding = currentUser.holdings?.[c.id] || 0;
                     total += holding * c.price;
                 });
-                document.getElementById('totalBalance').textContent = '$' + total.toLocaleString('en-US', {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2
-                });
+                const totalBalance = document.getElementById('totalBalance');
+                if (totalBalance) {
+                    totalBalance.textContent = '$' + total.toLocaleString('en-US', {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2
+                    });
+                }
                 const changeEl = document.getElementById('totalChange');
-                const randomChange = (Math.random() - 0.45) * 6;
-                if (randomChange >= 0) {
-                    changeEl.textContent = '+' + randomChange.toFixed(2) + '% ↑';
-                    changeEl.className = 'balance-change positive';
-                } else {
-                    changeEl.textContent = randomChange.toFixed(2) + '% ↓';
-                    changeEl.className = 'balance-change negative';
+                if (changeEl) {
+                    const randomChange = (Math.random() - 0.45) * 6;
+                    if (randomChange >= 0) {
+                        changeEl.textContent = '+' + randomChange.toFixed(2) + '% ↑';
+                        changeEl.className = 'balance-change positive';
+                    } else {
+                        changeEl.textContent = randomChange.toFixed(2) + '% ↓';
+                        changeEl.className = 'balance-change negative';
+                    }
                 }
             }
 
@@ -8993,8 +9005,10 @@ window.toLatinDigits = function(v){
                     progress.style.display = 'none';
                     btn.disabled = false;
                     btn.textContent = '🔄 مزامنة الآن';
-                    document.getElementById('lastSync').textContent = 'قبل لحظة';
-                    document.getElementById('lastBlock').textContent = '#847,' + Math.floor(Math.random() *
+                    var syncedAt = document.getElementById('lastSync');
+                    if (syncedAt) syncedAt.textContent = 'قبل لحظة';
+                    var syncedBlock = document.getElementById('lastBlock');
+                    if (syncedBlock) syncedBlock.textContent = '#847,' + Math.floor(Math.random() *
                         900 + 100);
                     updateAllPrices();
                     showToast('✅ تمت المزامنة بنجاح', 'success');
