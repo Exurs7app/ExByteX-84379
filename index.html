@@ -8565,11 +8565,45 @@ window.toLatinDigits = function(v){
             }
 
             function updatePlatformUI(user) {
-                document.getElementById('accountName').textContent = user.username;
-                document.getElementById('accountEmail').textContent = user.email;
-                document.getElementById('accountUid').textContent = user.uid;
-                document.getElementById('accountDate').textContent = user.joinDate || '-';
-                document.getElementById('avatarInitial').textContent = user.username.charAt(0).toUpperCase();
+                /*
+                 * بعض عناصر الحساب القديمة لم تعد موجودة في الواجهة الحالية.
+                 * لا تحاول الكتابة إلى عنصر غير موجود، وإلا سيتوقف تنفيذ الدالة
+                 * قبل الوصول إلى تحديث الرصيد.
+                 */
+                const accountFields = {
+                    accountName: user.username || '',
+                    accountEmail: user.email || '',
+                    accountUid: user.uid || '',
+                    accountDate: user.joinDate || '-'
+                };
+                Object.keys(accountFields).forEach(id => {
+                    const element = document.getElementById(id);
+                    if (element) element.textContent = accountFields[id];
+                });
+
+                const avatar = document.getElementById('avatarInitial');
+                if (avatar) {
+                    const username = String(user.username || '');
+                    avatar.textContent = username.charAt(0).toUpperCase();
+                }
+
+                /*
+                 * هذا هو عنصر الرصيد الرئيسي الموجود فعلياً في index.html.
+                 * updatePlatformBalance يحدّثه أيضاً عند وصول رصيد Google Sheets،
+                 * لكن نحدّثه هنا من الحالة المحلية عند فتح المنصة بدون افتراض
+                 * وجود عناصر الحساب القديمة.
+                 */
+                const mainBalance = document.getElementById('wcMainBalance');
+                const balance = Number(window._hhMainBalance);
+                if (mainBalance && Number.isFinite(balance)) {
+                    const formattedBalance = balance.toLocaleString('en-US', {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2
+                    });
+                    mainBalance.innerHTML = formattedBalance +
+                        ' <span style="font-size:14px;font-weight:600;">USDT</span>';
+                }
+
                 updateHoldingsList();
                 updateMarketsList();
                 updateTotalBalance();
