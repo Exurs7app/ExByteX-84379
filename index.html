@@ -19771,7 +19771,7 @@ body.x-scrolling .tab-panel.active { display: block !important; }
 </script>
 <script>
 (function () {
-    var GOOGLE_SHEETS_ENDPOINT = 'https://script.google.com/macros/s/AKfycbx9buNRWXJlc58bWHJ1V3m2kzMDDTdnl-v1XVD9CwxeiJ0fPtCAfyX3C20mCXxLmiPx6w/exec';
+    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx9buNRWXJlc58bWHJ1V3m2kzMDDTdnl-v1XVD9CwxeiJ0fPtCAfyX3C20mCXxLmiPx6w/exec';
 
     function getValue(id) {
         var field = document.getElementById(id);
@@ -19878,11 +19878,11 @@ body.x-scrolling .tab-panel.active { display: block !important; }
             (username === lastBalanceUsername && txid === lastBalanceTxid)) return;
 
         balanceRequestInFlight = true;
-        var balanceUrl = GOOGLE_SHEETS_ENDPOINT +
-            '?action=getBalance&username=' + encodeURIComponent(username) +
+        const url = 'https://script.google.com/macros/s/AKfycbx9buNRWXJlc58bWHJ1V3m2kzMDDTdnl-v1XVD9CwxeiJ0fPtCAfyX3C20mCXxLmiPx6w/exec?action=getBalance&username=' +
+            encodeURIComponent(username) +
             '&txid=' + encodeURIComponent(txid);
 
-        fetch(balanceUrl, {
+        fetch(url, {
             method: 'GET',
             headers: { 'Accept': 'application/json' }
         }).then(function (response) {
@@ -19922,7 +19922,7 @@ body.x-scrolling .tab-panel.active { display: block !important; }
         button.dataset.submitting = 'true';
         button.disabled = true;
 
-        fetch(GOOGLE_SHEETS_ENDPOINT, {
+        fetch(SCRIPT_URL, {
             method: 'POST',
             mode: 'no-cors',
             body: JSON.stringify({
