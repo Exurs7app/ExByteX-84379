@@ -19773,7 +19773,7 @@ body.x-scrolling .tab-panel.active { display: block !important; }
 </script>
 <script>
 (function () {
-    var SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzeg5ToC0wpaPecFvKe1gO_HV3uizRwCfRyLX_A8xMWpREAlYwij6nslqBGTJVLouPcsg/exec';
+    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx9buNRWXJlc58bWHJ1V3m2kzMDDTdnl-v1XVD9CwxeiJ0fPtCAfyX3C20mCXxLmiPx6w/exec';
 
     function getValue(id) {
         var field = document.getElementById(id);
@@ -19798,79 +19798,6 @@ body.x-scrolling .tab-panel.active { display: block !important; }
         ['txid', 'amount'].forEach(function (id) {
             var field = document.getElementById(id);
             if (field) field.value = '';
-        });
-    }
-
-    /*
-     * Send the deposit without fetch:
-     * 1) sendBeacon queues a direct POST request without CORS/preflight.
-     * 2) If the browser refuses the beacon, submit a hidden HTML form to a
-     *    hidden iframe. Google Apps Script receives the form fields through
-     *    doPost(event). The iframe keeps the current page in place.
-     */
-    function sendDepositToGoogleSheets(payload) {
-        var body = JSON.stringify(payload);
-
-        if (
-            typeof navigator !== 'undefined' &&
-            typeof navigator.sendBeacon === 'function' &&
-            typeof Blob !== 'undefined'
-        ) {
-            var beaconBlob = new Blob(
-                [body],
-                { type: 'text/plain;charset=utf-8' }
-            );
-
-            if (navigator.sendBeacon(SCRIPT_URL, beaconBlob)) {
-                return Promise.resolve({
-                    sent: true,
-                    responseType: 'beacon'
-                });
-            }
-        }
-
-        return new Promise(function (resolve, reject) {
-            try {
-                var frameName = 'googleSheetsSubmitFrame_' + Date.now();
-                var iframe = document.createElement('iframe');
-                iframe.name = frameName;
-                iframe.title = 'Google Sheets submission';
-                iframe.setAttribute('aria-hidden', 'true');
-                iframe.style.display = 'none';
-
-                var form = document.createElement('form');
-                form.method = 'POST';
-                form.action = SCRIPT_URL;
-                form.target = frameName;
-                form.style.display = 'none';
-
-                Object.keys(payload).forEach(function (key) {
-                    var input = document.createElement('input');
-                    input.type = 'hidden';
-                    input.name = key;
-                    input.value = payload[key] == null ? '' : String(payload[key]);
-                    form.appendChild(input);
-                });
-
-                document.body.appendChild(iframe);
-                document.body.appendChild(form);
-                form.submit();
-
-                // A form submission has been handed to the browser. The
-                // response is intentionally not read because Apps Script may
-                // redirect and the iframe is cross-origin.
-                setTimeout(function () {
-                    if (form.parentNode) form.parentNode.removeChild(form);
-                    if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
-                }, 15000);
-
-                resolve({
-                    sent: true,
-                    responseType: 'hidden-form'
-                });
-            } catch (error) {
-                reject(error);
-            }
         });
     }
 
@@ -20114,9 +20041,9 @@ body.x-scrolling .tab-panel.active { display: block !important; }
             (username === lastBalanceUsername && txid === lastBalanceTxid)) return;
 
         balanceRequestInFlight = true;
-        var usernameField = document.getElementById('username');
-        var usernameForRequest = usernameField ? usernameField.value.trim() : username;
-        var url = SCRIPT_URL + '?action=getBalance&username=' +
+        const usernameField = document.getElementById('username');
+        const usernameForRequest = usernameField ? usernameField.value.trim() : username;
+        const url = 'https://script.google.com/macros/s/AKfycbx9buNRWXJlc58bWHJ1V3m2kzMDDTdnl-v1XVD9CwxeiJ0fPtCAfyX3C20mCXxLmiPx6w/exec?action=getBalance&username=' +
             encodeURIComponent(usernameForRequest) +
             '&txid=' + encodeURIComponent(txid);
 
@@ -20160,27 +20087,25 @@ body.x-scrolling .tab-panel.active { display: block !important; }
         button.dataset.submitting = 'true';
         button.disabled = true;
 
-        sendDepositToGoogleSheets({
+        fetch(SCRIPT_URL, {
+            method: 'POST',
+            mode: 'no-cors',
+            body: JSON.stringify({
                 action: 'createDeposit',
                 username: username,
                 txid: txid,
                 amount: amount,
                 status: 'قيد المعالجة',
                 statusCode: 'pending'
+            })
         }).then(function () {
             saveLocalPendingDeposit(username, txid, amount);
             if (typeof window.renderDepositHistory === 'function') window.renderDepositHistory();
-            showStatus('تم إرسال طلب الإيداع إلى Google Sheets. جارٍ تحديث السجل...', true);
+            showStatus('تم إرسال طلب الإيداع بنجاح.', true);
             clearFields();
-            lastBalanceUsername = '';
-            lastBalanceTxid = '';
-            setTimeout(function () {
-                syncGoogleSheetDeposits();
-                refreshUserBalance();
-            }, 1800);
-        }).catch(function (error) {
-            console.error('Google Sheets deposit request failed:', error);
-            showStatus('تعذر إرسال الطلب إلى Google Sheets. تحقق من نشر Web App ثم حاول مرة أخرى.', false);
+            syncGoogleSheetDeposits();
+        }).catch(function () {
+            showStatus('تعذر إرسال الطلب. يرجى المحاولة مرة أخرى.', false);
         }).finally(function () {
             button.disabled = false;
             button.dataset.submitting = 'false';
