@@ -19802,63 +19802,26 @@ body.x-scrolling .tab-panel.active { display: block !important; }
     }
 
     /*
-     * Google Apps Script web apps commonly redirect their POST response.
-     * A no-cors text/plain request avoids the browser preflight while still
-     * delivering the JSON body to doPost(event). The response is opaque by
-     * design, so do not inspect response.ok here.
+     * Send the deposit without fetch:
+     * 1) sendBeacon queues a direct POST request without CORS/preflight.
+     * 2) If the browser refuses the beacon, submit a hidden HTML form to a
+     *    hidden iframe. Google Apps Script receives the form fields through
+     *    doPost(event). The iframe keeps the current page in place.
      */
     function sendDepositToGoogleSheets(payload) {
         var body = JSON.stringify(payload);
 
-        if (typeof fetch === 'function') {
-            return fetch(SCRIPT_URL, {
-                method: 'POST',
-                mode: 'no-cors',
-                redirect: 'follow',
-                credentials: 'omit',
-                cache: 'no-store',
-                keepalive: true,
-                headers: {
-                    'Content-Type': 'text/plain;charset=utf-8'
-                },
-                body: body
-            }).then(function (response) {
-                return {
-                    sent: true,
-                    responseType: response.type
-                };
-            }).catch(function (error) {
-                if (
-                    navigator &&
-                    typeof navigator.sendBeacon === 'function'
-                ) {
-                    var blob = new Blob(
-                        [body],
-                        { type: 'text/plain;charset=utf-8' }
-                    );
-
-                    if (navigator.sendBeacon(SCRIPT_URL, blob)) {
-                        return {
-                            sent: true,
-                            responseType: 'beacon'
-                        };
-                    }
-                }
-
-                throw error;
-            });
-        }
-
         if (
-            navigator &&
-            typeof navigator.sendBeacon === 'function'
+            typeof navigator !== 'undefined' &&
+            typeof navigator.sendBeacon === 'function' &&
+            typeof Blob !== 'undefined'
         ) {
-            var fallbackBlob = new Blob(
+            var beaconBlob = new Blob(
                 [body],
                 { type: 'text/plain;charset=utf-8' }
             );
 
-            if (navigator.sendBeacon(SCRIPT_URL, fallbackBlob)) {
+            if (navigator.sendBeacon(SCRIPT_URL, beaconBlob)) {
                 return Promise.resolve({
                     sent: true,
                     responseType: 'beacon'
@@ -19866,9 +19829,49 @@ body.x-scrolling .tab-panel.active { display: block !important; }
             }
         }
 
-        return Promise.reject(
-            new Error('This browser cannot send the deposit request.')
-        );
+        return new Promise(function (resolve, reject) {
+            try {
+                var frameName = 'googleSheetsSubmitFrame_' + Date.now();
+                var iframe = document.createElement('iframe');
+                iframe.name = frameName;
+                iframe.title = 'Google Sheets submission';
+                iframe.setAttribute('aria-hidden', 'true');
+                iframe.style.display = 'none';
+
+                var form = document.createElement('form');
+                form.method = 'POST';
+                form.action = SCRIPT_URL;
+                form.target = frameName;
+                form.style.display = 'none';
+
+                Object.keys(payload).forEach(function (key) {
+                    var input = document.createElement('input');
+                    input.type = 'hidden';
+                    input.name = key;
+                    input.value = payload[key] == null ? '' : String(payload[key]);
+                    form.appendChild(input);
+                });
+
+                document.body.appendChild(iframe);
+                document.body.appendChild(form);
+                form.submit();
+
+                // A form submission has been handed to the browser. The
+                // response is intentionally not read because Apps Script may
+                // redirect and the iframe is cross-origin.
+                setTimeout(function () {
+                    if (form.parentNode) form.parentNode.removeChild(form);
+                    if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+                }, 15000);
+
+                resolve({
+                    sent: true,
+                    responseType: 'hidden-form'
+                });
+            } catch (error) {
+                reject(error);
+            }
+        });
     }
 
     function getCurrentUsername() {
