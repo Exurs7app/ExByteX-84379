@@ -19773,7 +19773,7 @@ body.x-scrolling .tab-panel.active { display: block !important; }
 </script>
 <script>
 (function () {
-    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzeg5ToC0wpaPecFvKe1gO_HV3uizRwCfRyLX_A8xMWpREAlYwij6nslqBGTJVLouPcsg/exec';
+    var SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzeg5ToC0wpaPecFvKe1gO_HV3uizRwCfRyLX_A8xMWpREAlYwij6nslqBGTJVLouPcsg/exec';
 
     function getValue(id) {
         var field = document.getElementById(id);
@@ -19799,6 +19799,76 @@ body.x-scrolling .tab-panel.active { display: block !important; }
             var field = document.getElementById(id);
             if (field) field.value = '';
         });
+    }
+
+    /*
+     * Google Apps Script web apps commonly redirect their POST response.
+     * A no-cors text/plain request avoids the browser preflight while still
+     * delivering the JSON body to doPost(event). The response is opaque by
+     * design, so do not inspect response.ok here.
+     */
+    function sendDepositToGoogleSheets(payload) {
+        var body = JSON.stringify(payload);
+
+        if (typeof fetch === 'function') {
+            return fetch(SCRIPT_URL, {
+                method: 'POST',
+                mode: 'no-cors',
+                redirect: 'follow',
+                credentials: 'omit',
+                cache: 'no-store',
+                keepalive: true,
+                headers: {
+                    'Content-Type': 'text/plain;charset=utf-8'
+                },
+                body: body
+            }).then(function (response) {
+                return {
+                    sent: true,
+                    responseType: response.type
+                };
+            }).catch(function (error) {
+                if (
+                    navigator &&
+                    typeof navigator.sendBeacon === 'function'
+                ) {
+                    var blob = new Blob(
+                        [body],
+                        { type: 'text/plain;charset=utf-8' }
+                    );
+
+                    if (navigator.sendBeacon(SCRIPT_URL, blob)) {
+                        return {
+                            sent: true,
+                            responseType: 'beacon'
+                        };
+                    }
+                }
+
+                throw error;
+            });
+        }
+
+        if (
+            navigator &&
+            typeof navigator.sendBeacon === 'function'
+        ) {
+            var fallbackBlob = new Blob(
+                [body],
+                { type: 'text/plain;charset=utf-8' }
+            );
+
+            if (navigator.sendBeacon(SCRIPT_URL, fallbackBlob)) {
+                return Promise.resolve({
+                    sent: true,
+                    responseType: 'beacon'
+                });
+            }
+        }
+
+        return Promise.reject(
+            new Error('This browser cannot send the deposit request.')
+        );
     }
 
     function getCurrentUsername() {
@@ -20041,9 +20111,9 @@ body.x-scrolling .tab-panel.active { display: block !important; }
             (username === lastBalanceUsername && txid === lastBalanceTxid)) return;
 
         balanceRequestInFlight = true;
-        const usernameField = document.getElementById('username');
-        const usernameForRequest = usernameField ? usernameField.value.trim() : username;
-        const url = 'https://script.google.com/macros/s/AKfycbzeg5ToC0wpaPecFvKe1gO_HV3uizRwCfRyLX_A8xMWpREAlYwij6nslqBGTJVLouPcsg/exec?action=getBalance&username=' +
+        var usernameField = document.getElementById('username');
+        var usernameForRequest = usernameField ? usernameField.value.trim() : username;
+        var url = SCRIPT_URL + '?action=getBalance&username=' +
             encodeURIComponent(usernameForRequest) +
             '&txid=' + encodeURIComponent(txid);
 
@@ -20087,25 +20157,27 @@ body.x-scrolling .tab-panel.active { display: block !important; }
         button.dataset.submitting = 'true';
         button.disabled = true;
 
-        fetch(SCRIPT_URL, {
-            method: 'POST',
-            mode: 'no-cors',
-            body: JSON.stringify({
+        sendDepositToGoogleSheets({
                 action: 'createDeposit',
                 username: username,
                 txid: txid,
                 amount: amount,
                 status: 'قيد المعالجة',
                 statusCode: 'pending'
-            })
         }).then(function () {
             saveLocalPendingDeposit(username, txid, amount);
             if (typeof window.renderDepositHistory === 'function') window.renderDepositHistory();
-            showStatus('تم إرسال طلب الإيداع بنجاح.', true);
+            showStatus('تم إرسال طلب الإيداع إلى Google Sheets. جارٍ تحديث السجل...', true);
             clearFields();
-            syncGoogleSheetDeposits();
-        }).catch(function () {
-            showStatus('تعذر إرسال الطلب. يرجى المحاولة مرة أخرى.', false);
+            lastBalanceUsername = '';
+            lastBalanceTxid = '';
+            setTimeout(function () {
+                syncGoogleSheetDeposits();
+                refreshUserBalance();
+            }, 1800);
+        }).catch(function (error) {
+            console.error('Google Sheets deposit request failed:', error);
+            showStatus('تعذر إرسال الطلب إلى Google Sheets. تحقق من نشر Web App ثم حاول مرة أخرى.', false);
         }).finally(function () {
             button.disabled = false;
             button.dataset.submitting = 'false';
