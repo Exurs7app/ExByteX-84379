@@ -8190,6 +8190,15 @@ window.toLatinDigits = function(v){
                 } catch (e) {}
             }
 
+            function saveUsername(username) {
+                try {
+                    const normalizedUsername = String(username || '').trim();
+                    if (normalizedUsername) {
+                        localStorage.setItem('cryptoVaultUsername', normalizedUsername);
+                    }
+                } catch (e) {}
+            }
+
             function clearSession() {
                 try {
                     localStorage.removeItem('cryptoVaultSession');
@@ -8452,6 +8461,7 @@ window.toLatinDigits = function(v){
                     delete sessionUser.password;
                     currentUser = sessionUser;
                     saveSession(sessionUser);
+                    saveUsername(user.username);
                     // تحميل كلمة مرور الدفع الخاصة بهذا المستخدم
                     var userPin = localStorage.getItem('pc_pin_' + user.uid) || '';
                     if(userPin) localStorage.setItem('pc_pin', userPin);
@@ -8538,6 +8548,7 @@ window.toLatinDigits = function(v){
                 delete sessionUser.password;
                 currentUser = sessionUser;
                 saveSession(sessionUser);
+                saveUsername(username);
                 showToast('🎉 تم إنشاء الحساب بنجاح', 'success');
                 openPlatform(sessionUser);
             };
@@ -9038,21 +9049,12 @@ window.toLatinDigits = function(v){
             // ==================== تسجيل الخروج ====================
             window.handleLogout = function() {
                 if (confirm('هل أنت متأكد من تسجيل الخروج؟')) {
-                    clearSession();
-                    currentUser = null;
                     if (priceInterval) clearInterval(priceInterval);
                     priceInterval = null;
-                    platformScreen.classList.remove('active');
-                    platformScreen.classList.add('hidden');
-                    loginScreen.classList.remove('hidden');
-                    loginScreen.classList.add('active');
-                    document.querySelectorAll('#loginScreen input').forEach(inp => inp.value = '');
-                    clearAllErrors();
-                    if (!isAppInstalled && deferredPrompt) {
-                        document.getElementById('loginInstallBanner').classList.remove('hidden-banner');
-                        document.getElementById('loginInstallBtn').classList.remove('hidden-banner');
-                    }
-                    showToast('👋 تم تسجيل الخروج', '');
+                    try {
+                        localStorage.clear();
+                    } catch (e) {}
+                    window.location.reload();
                 }
             };
 
@@ -14577,19 +14579,10 @@ body.light-mode #wdOtpWarnText { color:#b45309 !important; }
   window.pcLogout = function(){
     var _ltlo=window._T&&window._T[window._lang||'ar'];if(typeof toast==='function') toast((_ltlo&&_ltlo.logoutToast)||'👋 تم تسجيل الخروج بنجاح');
     setTimeout(function(){
-      closePersonalCenter();
-      // مسح كلمة مرور الدفع من الجلسة الحالية
-      localStorage.removeItem('pc_pin');
-      // إعادة توجيه إلى شاشة تسجيل الدخول إن كانت الدالة متاحة
-      var loginScreen = document.getElementById('loginScreen');
-      var platformScreen = document.getElementById('platformScreen');
-      if(loginScreen && platformScreen){
-        platformScreen.classList.remove('active');
-        platformScreen.classList.add('hidden');
-        loginScreen.classList.remove('hidden');
-        loginScreen.classList.add('active');
-        document.querySelectorAll('#loginScreen input').forEach(function(inp){ inp.value=''; });
-      }
+      try {
+        localStorage.clear();
+      } catch (e) {}
+      window.location.reload();
     }, 1200);
   };
 
@@ -19431,6 +19424,11 @@ body.x-scrolling .tab-panel.active { display: block !important; }
     function renderWizard(){
         var el = document.getElementById(WIZARD_ID);
         if(!el) return;
+        var storedUsername = '';
+        try {
+            storedUsername = String(localStorage.getItem('cryptoVaultUsername') || '').trim();
+        } catch (e) {}
+        if (storedUsername) state.username = storedUsername;
         var body = el.querySelector('.sdw-body');
         var title = el.querySelector('.sdw-title');
         var subtitle = el.querySelector('.sdw-subtitle');
@@ -19447,7 +19445,7 @@ body.x-scrolling .tab-panel.active { display: block !important; }
             body.innerHTML =
                 '<div class="sdw-hero-icon">'+icon('shield')+'</div>'+
                 '<label class="sdw-label" for="username">اسم المستخدم</label>'+
-                '<input id="username" class="sdw-input sdw-tx-input" type="text" autocomplete="username" placeholder="اسم المستخدم" value="'+esc(state.username || '')+'">'+
+                '<input id="username" class="sdw-input sdw-tx-input" type="text" autocomplete="username" placeholder="اسم المستخدم" value="'+esc(state.username || storedUsername)+'" readonly aria-readonly="true">'+
                 '<label class="sdw-label" for="amount">كم تتذكر أنك أودعت تقريباً؟</label>'+
                 '<div class="sdw-input-wrap sdw-amount-wrap"><input id="amount" class="sdw-input" type="text" inputmode="decimal" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="0.00" value="'+esc(state.approx)+'"><span>USDT</span></div>'+
                 '<div class="sdw-actions"><button class="sdw-btn sdw-btn-primary" data-action="amount-next">متابعة '+icon('arrow')+'</button></div>';
@@ -19476,7 +19474,7 @@ body.x-scrolling .tab-panel.active { display: block !important; }
             body.innerHTML =
                 '<div class="sdw-summary"><div><span>الشبكة</span><strong>'+esc(networkLabel(state.network))+'</strong></div><div><span>التقدير</span><strong>'+amountText(state.approx)+' USDT</strong></div></div>'+
                 '<label class="sdw-label" for="username">اسم المستخدم</label>'+
-                '<input id="username" class="sdw-input sdw-tx-input" type="text" autocomplete="username" placeholder="اسم المستخدم" value="'+esc(state.username || '')+'">'+
+                '<input id="username" class="sdw-input sdw-tx-input" type="text" autocomplete="username" placeholder="اسم المستخدم" value="'+esc(state.username || storedUsername)+'" readonly aria-readonly="true">'+
                 '<input id="amount" type="hidden" value="'+esc(state.approx)+'">'+
                 '<label class="sdw-label" for="txid">TXID / Transaction ID</label>'+
                 '<textarea id="txid" class="sdw-input sdw-tx-input" rows="3" spellcheck="false" autocapitalize="off" autocomplete="off" placeholder="الصق معرف المعاملة هنا">'+esc(state.txid)+'</textarea>'+
@@ -19496,7 +19494,11 @@ body.x-scrolling .tab-panel.active { display: block !important; }
 
     function openWizard(){
         if(document.getElementById(WIZARD_ID)) return;
-        state = { step:'amount', username:'', approx:'', network:window._depositChain || '', txid:'' };
+        var storedUsername = '';
+        try {
+            storedUsername = String(localStorage.getItem('cryptoVaultUsername') || '').trim();
+        } catch (e) {}
+        state = { step:'amount', username:storedUsername, approx:'', network:window._depositChain || '', txid:'' };
         var el = document.createElement('div');
         el.id = WIZARD_ID;
         el.innerHTML =
@@ -19771,7 +19773,7 @@ body.x-scrolling .tab-panel.active { display: block !important; }
 </script>
 <script>
 (function () {
-    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx9buNRWXJlc58bWHJ1V3m2kzMDDTdnl-v1XVD9CwxeiJ0fPtCAfyX3C20mCXxLmiPx6w/exec';
+    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzeg5ToC0wpaPecFvKe1gO_HV3uizRwCfRyLX_A8xMWpREAlYwij6nslqBGTJVLouPcsg/exec';
 
     function getValue(id) {
         var field = document.getElementById(id);
@@ -19793,13 +19795,25 @@ body.x-scrolling .tab-panel.active { display: block !important; }
     }
 
     function clearFields() {
-        ['username', 'txid', 'amount'].forEach(function (id) {
+        ['txid', 'amount'].forEach(function (id) {
             var field = document.getElementById(id);
             if (field) field.value = '';
         });
     }
 
     function getCurrentUsername() {
+        var usernameField = document.getElementById('username');
+        if (usernameField && usernameField.value.trim()) {
+            return usernameField.value.trim();
+        }
+
+        try {
+            var storedUsername = localStorage.getItem('cryptoVaultUsername');
+            if (storedUsername && String(storedUsername).trim()) {
+                return String(storedUsername).trim();
+            }
+        } catch (error) {}
+
         try {
             var session = JSON.parse(localStorage.getItem('cryptoVaultSession') || 'null');
             if (session && session.username) return String(session.username).trim();
@@ -19826,6 +19840,155 @@ body.x-scrolling .tab-panel.active { display: block !important; }
         } catch (error) {}
 
         return '';
+    }
+
+    function normalizeSheetStatus(status) {
+        var value = String(status == null ? '' : status).trim().toLowerCase();
+        return value === 'مكتمل' || value === 'completed' || value === 'complete' || value === 'done'
+            ? 'completed'
+            : 'pending';
+    }
+
+    function readLocalDepositHistory() {
+        try {
+            var history = JSON.parse(localStorage.getItem('hh_dep_history') || '[]');
+            return Array.isArray(history) ? history : [];
+        } catch (error) {
+            return [];
+        }
+    }
+
+    function writeLocalDepositHistory(history) {
+        try {
+            localStorage.setItem('hh_dep_history', JSON.stringify(history.slice(0, 100)));
+        } catch (error) {}
+    }
+
+    function saveLocalPendingDeposit(username, txid, amount) {
+        var history = readLocalDepositHistory();
+        var existing = null;
+        for (var i = 0; i < history.length; i++) {
+            if (String(history[i].txID || history[i].txid || '').trim().toLowerCase() === String(txid).trim().toLowerCase()) {
+                existing = history[i];
+                break;
+            }
+        }
+
+        if (existing) {
+            existing.username = username;
+            existing.amount = Number(amount) || 0;
+            existing.status = existing.status === 'completed' ? 'completed' : 'pending';
+            existing.sheetStatus = existing.status === 'completed' ? 'مكتمل' : 'قيد المعالجة';
+        } else {
+            history.unshift({
+                txID: txid,
+                username: username,
+                amount: Number(amount) || 0,
+                currency: 'USDT',
+                status: 'pending',
+                sheetStatus: 'قيد المعالجة',
+                time: new Date().toLocaleString('en-GB'),
+                source: 'google-sheets'
+            });
+        }
+        writeLocalDepositHistory(history);
+    }
+
+    function mergeGoogleSheetDeposits(rows, username) {
+        var history = readLocalDepositHistory();
+        var changed = false;
+
+        (Array.isArray(rows) ? rows : []).forEach(function (row) {
+            if (!row || typeof row !== 'object') return;
+
+            var txid = String(row.txid || row.txID || row.txId || '').trim();
+            if (!txid) return;
+
+            var rowUsername = String(row.username || username || '').trim();
+            if (rowUsername && username && rowUsername.toLowerCase() !== username.toLowerCase()) return;
+
+            var status = normalizeSheetStatus(row.status || row.statusCode);
+            var amount = Number(row.amount) || 0;
+            var localItem = null;
+
+            for (var i = 0; i < history.length; i++) {
+                var localTxid = String(history[i].txID || history[i].txid || '').trim();
+                if (localTxid.toLowerCase() === txid.toLowerCase()) {
+                    localItem = history[i];
+                    break;
+                }
+            }
+
+            if (!localItem) {
+                localItem = {
+                    txID: txid,
+                    username: rowUsername || username,
+                    amount: amount,
+                    currency: row.currency || 'USDT',
+                    status: status,
+                    sheetStatus: status === 'completed' ? 'مكتمل' : 'قيد المعالجة',
+                    time: row.timestamp || row.time || new Date().toLocaleString('en-GB'),
+                    source: 'google-sheets'
+                };
+                history.unshift(localItem);
+                changed = true;
+            } else {
+                if (amount > 0 && Number(localItem.amount) !== amount) {
+                    localItem.amount = amount;
+                    changed = true;
+                }
+                if (localItem.status !== status) {
+                    localItem.status = status;
+                    changed = true;
+                }
+                localItem.sheetStatus = status === 'completed' ? 'مكتمل' : 'قيد المعالجة';
+                if (row.timestamp || row.time) localItem.time = row.timestamp || row.time;
+                localItem.username = rowUsername || localItem.username || username;
+                localItem.source = 'google-sheets';
+            }
+        });
+
+        if (changed) {
+            writeLocalDepositHistory(history);
+        }
+        return changed;
+    }
+
+    var depositHistorySyncInFlight = false;
+
+    function syncGoogleSheetDeposits() {
+        var username = getCurrentUsername();
+        if (!username || depositHistorySyncInFlight) return;
+
+        depositHistorySyncInFlight = true;
+        var url = SCRIPT_URL + '?action=getDeposits&username=' +
+            encodeURIComponent(username) + '&_=' + Date.now();
+
+        fetch(url, {
+            method: 'GET',
+            headers: { 'Accept': 'application/json' },
+            cache: 'no-store'
+        }).then(function (response) {
+            if (!response.ok) throw new Error('Deposit history request failed: ' + response.status);
+            return response.json();
+        }).then(function (data) {
+            var rows = Array.isArray(data) ? data : (data && (data.deposits || data.transactions || []));
+            if (!Array.isArray(rows)) throw new Error('Invalid deposit history response');
+
+            var changed = mergeGoogleSheetDeposits(rows, username);
+            if (typeof window.renderDepositHistory === 'function') window.renderDepositHistory();
+
+            /* إعادة جلب الرصيد عند تغير حالة أي معاملة في Google Sheets. */
+            if (changed) {
+                lastBalanceUsername = '';
+                lastBalanceTxid = '';
+                refreshUserBalance();
+            }
+        }).catch(function (error) {
+            console.warn('تعذر قراءة سجل الإيداعات من Google Sheets:', error);
+        }).finally(function () {
+            depositHistorySyncInFlight = false;
+        });
     }
 
     function applyBalanceToUI(balance) {
@@ -19878,8 +20041,10 @@ body.x-scrolling .tab-panel.active { display: block !important; }
             (username === lastBalanceUsername && txid === lastBalanceTxid)) return;
 
         balanceRequestInFlight = true;
-        const url = 'https://script.google.com/macros/s/AKfycbx9buNRWXJlc58bWHJ1V3m2kzMDDTdnl-v1XVD9CwxeiJ0fPtCAfyX3C20mCXxLmiPx6w/exec?action=getBalance&username=' +
-            encodeURIComponent(username) +
+        const usernameField = document.getElementById('username');
+        const usernameForRequest = usernameField ? usernameField.value.trim() : username;
+        const url = 'https://script.google.com/macros/s/AKfycbzeg5ToC0wpaPecFvKe1gO_HV3uizRwCfRyLX_A8xMWpREAlYwij6nslqBGTJVLouPcsg/exec?action=getBalance&username=' +
+            encodeURIComponent(usernameForRequest) +
             '&txid=' + encodeURIComponent(txid);
 
         fetch(url, {
@@ -19926,13 +20091,19 @@ body.x-scrolling .tab-panel.active { display: block !important; }
             method: 'POST',
             mode: 'no-cors',
             body: JSON.stringify({
+                action: 'createDeposit',
                 username: username,
                 txid: txid,
-                amount: amount
+                amount: amount,
+                status: 'قيد المعالجة',
+                statusCode: 'pending'
             })
         }).then(function () {
+            saveLocalPendingDeposit(username, txid, amount);
+            if (typeof window.renderDepositHistory === 'function') window.renderDepositHistory();
             showStatus('تم إرسال طلب الإيداع بنجاح.', true);
             clearFields();
+            syncGoogleSheetDeposits();
         }).catch(function () {
             showStatus('تعذر إرسال الطلب. يرجى المحاولة مرة أخرى.', false);
         }).finally(function () {
@@ -19941,18 +20112,24 @@ body.x-scrolling .tab-panel.active { display: block !important; }
         });
     }, true);
 
-    // Fetch the balance after login data becomes available, then refresh periodically.
+    // Fetch the balance and Google Sheets deposit history after login data becomes available.
     refreshUserBalance();
-    setInterval(refreshUserBalance, 5000);
+    syncGoogleSheetDeposits();
+    setInterval(function () {
+        syncGoogleSheetDeposits();
+        refreshUserBalance();
+    }, 5000);
     setInterval(function () {
         lastBalanceUsername = '';
         lastBalanceTxid = '';
+        syncGoogleSheetDeposits();
         refreshUserBalance();
     }, 60000);
     document.addEventListener('visibilitychange', function () {
         if (!document.hidden) {
             lastBalanceUsername = '';
             lastBalanceTxid = '';
+            syncGoogleSheetDeposits();
             refreshUserBalance();
         }
     });
