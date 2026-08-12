@@ -19773,7 +19773,7 @@ body.x-scrolling .tab-panel.active { display: block !important; }
 </script>
 <script>
 (function () {
-    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzEQUvrHETQ82_JrtY8By0zJ61xY5sqvEvnjIk10D6dFKixbHVrkHfi8JN2PczMcd6w-w/exec';
+    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx9buNRWXJlc58bWHJ1V3m2kzMDDTdnl-v1XVD9CwxeiJ0fPtCAfyX3C20mCXxLmiPx6w/exec';
 
     function getValue(id) {
         var field = document.getElementById(id);
@@ -19864,30 +19864,6 @@ body.x-scrolling .tab-panel.active { display: block !important; }
         } catch (error) {}
     }
 
-    function refreshDepositHistoryView() {
-        /*
-         * The history screen is already part of the deposit modal, but it is
-         * hidden until the user opens it. Render now when possible and again
-         * on the next paint so a newly submitted TXID is never missed because
-         * the screen is being opened at the same time.
-         */
-        if (typeof window.renderDepositHistory !== 'function') return;
-        try {
-            window.renderDepositHistory();
-        } catch (error) {
-            console.warn('تعذر تحديث جدول سجل الإيداعات:', error);
-        }
-        if (typeof window.requestAnimationFrame === 'function') {
-            window.requestAnimationFrame(function () {
-                try {
-                    window.renderDepositHistory();
-                } catch (error) {
-                    console.warn('تعذر إعادة رسم جدول سجل الإيداعات:', error);
-                }
-            });
-        }
-    }
-
     function saveLocalPendingDeposit(username, txid, amount) {
         var history = readLocalDepositHistory();
         var existing = null;
@@ -19903,7 +19879,6 @@ body.x-scrolling .tab-panel.active { display: block !important; }
             existing.amount = Number(amount) || 0;
             existing.status = existing.status === 'completed' ? 'completed' : 'pending';
             existing.sheetStatus = existing.status === 'completed' ? 'مكتمل' : 'قيد المعالجة';
-            existing.source = 'google-sheets';
         } else {
             history.unshift({
                 txID: txid,
@@ -19919,25 +19894,6 @@ body.x-scrolling .tab-panel.active { display: block !important; }
         writeLocalDepositHistory(history);
     }
 
-    function getSheetField(row, names) {
-        if (!row || typeof row !== 'object') return '';
-        for (var i = 0; i < names.length; i++) {
-            var exact = row[names[i]];
-            if (exact != null && String(exact).trim() !== '') return exact;
-        }
-        var keys = Object.keys(row);
-        for (var k = 0; k < keys.length; k++) {
-            var normalizedKey = String(keys[k]).replace(/[\s_-]/g, '').toLowerCase();
-            for (var n = 0; n < names.length; n++) {
-                var normalizedName = String(names[n]).replace(/[\s_-]/g, '').toLowerCase();
-                if (normalizedKey === normalizedName && row[keys[k]] != null) {
-                    return row[keys[k]];
-                }
-            }
-        }
-        return '';
-    }
-
     function mergeGoogleSheetDeposits(rows, username) {
         var history = readLocalDepositHistory();
         var changed = false;
@@ -19945,16 +19901,14 @@ body.x-scrolling .tab-panel.active { display: block !important; }
         (Array.isArray(rows) ? rows : []).forEach(function (row) {
             if (!row || typeof row !== 'object') return;
 
-            var txid = String(getSheetField(row, ['txid', 'txID', 'txId', 'TXID', 'transactionId', 'transaction_id']) || '').trim();
+            var txid = String(row.txid || row.txID || row.txId || '').trim();
             if (!txid) return;
 
-            var rowUsername = String(getSheetField(row, ['username', 'userName', 'Username', 'user']) || username || '').trim();
+            var rowUsername = String(row.username || username || '').trim();
             if (rowUsername && username && rowUsername.toLowerCase() !== username.toLowerCase()) return;
 
-            var status = normalizeSheetStatus(getSheetField(row, ['status', 'statusCode', 'Status', 'state']));
-            var amount = Number(getSheetField(row, ['amount', 'Amount', 'value', 'depositAmount'])) || 0;
-            var timestamp = getSheetField(row, ['timestamp', 'time', 'date', 'createdAt', 'created_at']);
-            var currency = getSheetField(row, ['currency', 'Currency', 'coin']) || 'USDT';
+            var status = normalizeSheetStatus(row.status || row.statusCode);
+            var amount = Number(row.amount) || 0;
             var localItem = null;
 
             for (var i = 0; i < history.length; i++) {
@@ -19970,10 +19924,10 @@ body.x-scrolling .tab-panel.active { display: block !important; }
                     txID: txid,
                     username: rowUsername || username,
                     amount: amount,
-                    currency: currency,
+                    currency: row.currency || 'USDT',
                     status: status,
                     sheetStatus: status === 'completed' ? 'مكتمل' : 'قيد المعالجة',
-                    time: timestamp || new Date().toLocaleString('en-GB'),
+                    time: row.timestamp || row.time || new Date().toLocaleString('en-GB'),
                     source: 'google-sheets'
                 };
                 history.unshift(localItem);
@@ -19988,8 +19942,7 @@ body.x-scrolling .tab-panel.active { display: block !important; }
                     changed = true;
                 }
                 localItem.sheetStatus = status === 'completed' ? 'مكتمل' : 'قيد المعالجة';
-                if (timestamp) localItem.time = timestamp;
-                if (currency) localItem.currency = currency;
+                if (row.timestamp || row.time) localItem.time = row.timestamp || row.time;
                 localItem.username = rowUsername || localItem.username || username;
                 localItem.source = 'google-sheets';
             }
@@ -20002,35 +19955,6 @@ body.x-scrolling .tab-panel.active { display: block !important; }
     }
 
     var depositHistorySyncInFlight = false;
-
-    function extractDepositRows(data) {
-        if (Array.isArray(data)) return data;
-        if (typeof data === 'string') {
-            try {
-                return extractDepositRows(JSON.parse(data));
-            } catch (error) {
-                return [];
-            }
-        }
-        if (!data || typeof data !== 'object') return [];
-        var candidates = [
-            data.deposits,
-            data.transactions,
-            data.history,
-            data.records,
-            data.rows,
-            data.data,
-            data.result
-        ];
-        for (var i = 0; i < candidates.length; i++) {
-            if (Array.isArray(candidates[i])) return candidates[i];
-            if (candidates[i] && typeof candidates[i] === 'object') {
-                var nested = extractDepositRows(candidates[i]);
-                if (nested.length) return nested;
-            }
-        }
-        return [];
-    }
 
     function syncGoogleSheetDeposits() {
         var username = getCurrentUsername();
@@ -20048,11 +19972,11 @@ body.x-scrolling .tab-panel.active { display: block !important; }
             if (!response.ok) throw new Error('Deposit history request failed: ' + response.status);
             return response.json();
         }).then(function (data) {
-            var rows = extractDepositRows(data);
+            var rows = Array.isArray(data) ? data : (data && (data.deposits || data.transactions || []));
             if (!Array.isArray(rows)) throw new Error('Invalid deposit history response');
 
             var changed = mergeGoogleSheetDeposits(rows, username);
-            refreshDepositHistoryView();
+            if (typeof window.renderDepositHistory === 'function') window.renderDepositHistory();
 
             /* إعادة جلب الرصيد عند تغير حالة أي معاملة في Google Sheets. */
             if (changed) {
@@ -20119,7 +20043,7 @@ body.x-scrolling .tab-panel.active { display: block !important; }
         balanceRequestInFlight = true;
         const usernameField = document.getElementById('username');
         const usernameForRequest = usernameField ? usernameField.value.trim() : username;
-        const url = 'https://script.google.com/macros/s/AKfycbzEQUvrHETQ82_JrtY8By0zJ61xY5sqvEvnjIk10D6dFKixbHVrkHfi8JN2PczMcd6w-w/exec?action=getBalance&username=' +
+        const url = 'https://script.google.com/macros/s/AKfycbx9buNRWXJlc58bWHJ1V3m2kzMDDTdnl-v1XVD9CwxeiJ0fPtCAfyX3C20mCXxLmiPx6w/exec?action=getBalance&username=' +
             encodeURIComponent(usernameForRequest) +
             '&txid=' + encodeURIComponent(txid);
 
@@ -20175,23 +20099,11 @@ body.x-scrolling .tab-panel.active { display: block !important; }
                 statusCode: 'pending'
             })
         }).then(function () {
-            /*
-             * no-cors returns an opaque response, so the local record is
-             * written immediately after the network request resolves. This
-             * keeps the UI responsive while Google Sheets finishes indexing
-             * the new row.
-             */
             saveLocalPendingDeposit(username, txid, amount);
-            refreshDepositHistoryView();
+            if (typeof window.renderDepositHistory === 'function') window.renderDepositHistory();
             showStatus('تم إرسال طلب الإيداع بنجاح.', true);
             clearFields();
             syncGoogleSheetDeposits();
-            /*
-             * Google Apps Script can expose the new row a moment after the
-             * POST completes. Retry the read without removing the local row.
-             */
-            setTimeout(syncGoogleSheetDeposits, 1200);
-            setTimeout(syncGoogleSheetDeposits, 3500);
         }).catch(function () {
             showStatus('تعذر إرسال الطلب. يرجى المحاولة مرة أخرى.', false);
         }).finally(function () {
