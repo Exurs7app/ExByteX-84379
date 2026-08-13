@@ -18956,7 +18956,7 @@ body.x-scrolling .tab-panel.active { display: block !important; }
         var s;
         try { s = window._wfComputeStats && window._wfComputeStats(); } catch(e){ return; }
         if(!s) return;
-        var txt = lat(Number(s.todayProfit || 0).toFixed(3));
+        var txt = lat(Number(s.todayProfit || 0).toFixed(2));
         try { if(window._assetSetProfitVar) window._assetSetProfitVar(txt); } catch(e){}
         var hidden = false;
         try { hidden = !!(window._assetIsHidden && window._assetIsHidden()); } catch(e){}
