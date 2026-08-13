@@ -7759,9 +7759,9 @@ window.toLatinDigits = function(v){
                             #homeAssetEyeBtn { top:13px; left:14px; width:38px; height:38px; border-radius:10px; }
                             #homeAssetEyeBtn svg { width:18px; height:18px; }
                         }
-                    </style> <div id="homeAssetCard" aria-label="إجمالي الأصول"><button id="homeAssetEyeBtn" type="button" onclick="toggleHomeAssetVisibility()" aria-label="إخفاء الأصول" aria-pressed="false" title="إظهار أو إخفاء الأصول"><svg id="homeAssetEyeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button><div id="homeAssetContent"><span id="homeAssetLabel">إجمالي أصول الحساب</span><div id="homeAssetAmountRow"><span id="homeAssetTotalDisplay">0.000</span><span id="homeAssetCurrency">USDT</span></div></div></div> <script>
+                    </style> <div id="homeAssetCard" aria-label="إجمالي الأصول"><button id="homeAssetEyeBtn" type="button" onclick="toggleHomeAssetVisibility()" aria-label="إخفاء الأصول" aria-pressed="false" title="إظهار أو إخفاء الأصول"><svg id="homeAssetEyeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button><div id="homeAssetContent"><span id="homeAssetLabel">إجمالي أصول الحساب</span><div id="homeAssetAmountRow"><span id="homeAssetTotalDisplay">0.00</span><span id="homeAssetCurrency">USDT</span></div></div></div> <script>
                     (function(){
-                        var hidden=false, fallbackValue='0.000';
+                        var hidden=false, fallbackValue='0.00';
                         var eyeOpen='<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>';
                         var eyeClosed='<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>';
                         function currentValue(){
@@ -13227,27 +13227,24 @@ body.light-mode #wdOtpWarnText { color:#b45309 !important; }
     _pcmRenderList('all');
   };
 
-  window.pcmCopyShareLink = function(){
-    var link = 'https://exurs7app.github.io/ExByteX-78359/';
-    // محاولة نسخ الرابط الفعلي من كود الدعوة إذا كان متاحاً
-    var uid = localStorage.getItem('hh_uid') || window._hhUID || '';
-    if(uid) link = 'https://exurs7app.github.io/ExByteX-78359/?ref=' + uid.slice(0,6);
-    var btn = document.getElementById('pcmShareBtnLabel');
+  window.pcmCopyShareLink = function(event){
+    if(event && event.preventDefault) event.preventDefault();
+    var link = 'https://exurs7app.github.io/ExByteX-84379/';
+    function fallbackCopy(){
+      var ta=document.createElement('textarea');
+      ta.value=link;
+      ta.readOnly=true;
+      ta.style.cssText='position:fixed;top:-9999px;left:-9999px;opacity:0;';
+      document.body.appendChild(ta);
+      ta.select();
+      ta.setSelectionRange(0,99999);
+      try{ document.execCommand('copy'); }catch(e){}
+      document.body.removeChild(ta);
+    }
     if(navigator.clipboard && navigator.clipboard.writeText){
-      navigator.clipboard.writeText(link).then(function(){
-        var _clT=window._T&&window._T[window._lang||'ar'];if(typeof toast==='function')toast((_clT&&_clT.pcmShareCopiedToast)||'🔗 تم نسخ رابط المشاركة');
-        if(btn){btn.textContent=(_clT&&_clT.pcmShareCopied)||'✅ تم النسخ!';setTimeout(function(){btn.textContent=(_clT&&_clT.pcmShareBtnLabel)||'نسخ رابط المشاركة';},2000);}
-      }).catch(function(){
-        var ta=document.createElement('textarea'); ta.value=link; ta.readOnly=true; ta.style.position='fixed'; ta.style.top='-9999px'; ta.style.left='-9999px'; ta.style.opacity='0';
-        document.body.appendChild(ta); ta.select(); ta.setSelectionRange(0,99999); document.execCommand('copy'); document.body.removeChild(ta);
-        var _clT2=window._T&&window._T[window._lang||'ar'];if(typeof toast==='function')toast((_clT2&&_clT2.pcmShareCopiedToast)||'🔗 تم نسخ رابط المشاركة');
-        if(btn){btn.textContent=(_clT2&&_clT2.pcmShareCopied)||'✅ تم النسخ!';setTimeout(function(){btn.textContent=(_clT2&&_clT2.pcmShareBtnLabel)||'نسخ رابط المشاركة';},2000);}
-      });
+      navigator.clipboard.writeText(link).catch(fallbackCopy);
     } else {
-      var ta=document.createElement('textarea'); ta.value=link; ta.readOnly=true; ta.style.position='fixed'; ta.style.top='-9999px'; ta.style.left='-9999px'; ta.style.opacity='0';
-      document.body.appendChild(ta); ta.select(); ta.setSelectionRange(0,99999); document.execCommand('copy'); document.body.removeChild(ta);
-      var _clT3=window._T&&window._T[window._lang||'ar'];if(typeof toast==='function')toast((_clT3&&_clT3.pcmShareCopiedToast)||'🔗 تم نسخ رابط المشاركة');
-      if(btn){btn.textContent=(_clT3&&_clT3.pcmShareCopied)||'✅ تم النسخ!';setTimeout(function(){btn.textContent=(_clT3&&_clT3.pcmShareBtnLabel)||'نسخ رابط المشاركة';},2000);}
+      fallbackCopy();
     }
   };
 
@@ -13377,7 +13374,6 @@ body.light-mode #wdOtpWarnText { color:#b45309 !important; }
     var _origShareLink = window.pcmCopyShareLink;
     window.pcmCopyShareLink = function(){
       if(typeof _origShareLink === 'function') _origShareLink.apply(this, arguments);
-      window._pcmAddMember();
     };
     var _origShareInvite = window.pcShareInvite;
     window.pcShareInvite = function(){
@@ -13385,6 +13381,11 @@ body.light-mode #wdOtpWarnText { color:#b45309 !important; }
       window._pcmAddMember();
     };
   })();
+  var _pcmCopyOnlyButton = document.getElementById('pcmShareBtn');
+  if(_pcmCopyOnlyButton){
+    _pcmCopyOnlyButton.removeAttribute('onmousedown');
+    _pcmCopyOnlyButton.removeAttribute('onmouseup');
+  }
 
   /* تهيئة أولية للعدّادات المحفوظة */
   if(document.readyState === 'loading'){
@@ -17678,18 +17679,18 @@ body.x-scrolling .tab-panel.active { display: block !important; }
         /* إجمالي الأصول في تبويب الأصول */
         var totalEl = document.getElementById('assetTotalDisplay');
         if(totalEl){
-            totalEl.dataset.assetValue = fmt3;
-            if(totalEl.textContent !== '****') totalEl.textContent = fmt3;
+            totalEl.dataset.assetValue = fmt;
+            if(totalEl.textContent !== '****') totalEl.textContent = fmt;
         }
         if(typeof window.syncHomeAssetBalance === 'function') window.syncHomeAssetBalance();
 
         /* قيمة محفظة العملة في قائمة الأصول */
         var wcv = document.getElementById('walletCurrencyVal');
-        if(wcv && wcv.textContent !== '****') wcv.textContent = fmt3;
+        if(wcv && wcv.textContent !== '****') wcv.textContent = fmt;
 
         /* قيمة محفظة العقود الآجلة (المستخدمة في السحب) */
         var wfv = document.getElementById('walletFuturesVal');
-        if(wfv && wfv.textContent !== '****') wfv.textContent = fmt3;
+        if(wfv && wfv.textContent !== '****') wfv.textContent = fmt;
 
         /* شاشة محفظة العملة - الرصيد الكبير */
         var wcmb = document.getElementById('wcMainBalance');
@@ -17788,6 +17789,97 @@ body.x-scrolling .tab-panel.active { display: block !important; }
     function depWriteJson(key, value){
         try{ localStorage.setItem(key, JSON.stringify(value)); }catch(e){}
     }
+    /*
+     * Keep deposit history visible for 24 hours only. This affects the
+     * history list storage exclusively; the main balance is intentionally
+     * never changed by this cleanup.
+     */
+    var DEP_HISTORY_RETENTION_MS = 24 * 60 * 60 * 1000;
+    var DEP_EXPIRED_KEY = 'hh_dep_history_expired_v1';
+    function depParseHistoryTimestamp(value){
+        if(value == null || value === '') return 0;
+        if(typeof value === 'number' && isFinite(value)){
+            return value < 100000000000 ? value * 1000 : value;
+        }
+        var raw = String(value).trim();
+        if(!raw) return 0;
+        if(/^\d{10,13}$/.test(raw)){
+            var numeric = Number(raw);
+            return numeric < 100000000000 ? numeric * 1000 : numeric;
+        }
+        var match = raw.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})(?:[ T,]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+        if(match){
+            return new Date(
+                Number(match[1]), Number(match[2]) - 1, Number(match[3]),
+                Number(match[4] || 0), Number(match[5] || 0), Number(match[6] || 0)
+            ).getTime();
+        }
+        match = raw.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})(?:[ ,T]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+        if(match){
+            return new Date(
+                Number(match[3]), Number(match[2]) - 1, Number(match[1]),
+                Number(match[4] || 0), Number(match[5] || 0), Number(match[6] || 0)
+            ).getTime();
+        }
+        var parsed = Date.parse(raw);
+        return isFinite(parsed) ? parsed : 0;
+    }
+    function depHistoryTimestamp(item){
+        if(!item) return 0;
+        var values = [
+            item.createdAt, item.created_at, item.timestamp, item.time,
+            item.verificationAcceptedAt, item.settledAt
+        ];
+        for(var i = 0; i < values.length; i++){
+            var timestamp = depParseHistoryTimestamp(values[i]);
+            if(timestamp > 0) return timestamp;
+        }
+        return 0;
+    }
+    function depHistoryTxKey(itemOrTxID){
+        var value = typeof itemOrTxID === 'object'
+            ? (itemOrTxID && (itemOrTxID.txID || itemOrTxID.txid || itemOrTxID.txId || itemOrTxID.transactionId || itemOrTxID.transaction_id))
+            : itemOrTxID;
+        return String(value || '').replace(/^0x/i,'').replace(/\s+/g,'').trim().toLowerCase();
+    }
+    function depIsHistoryStatus(item){
+        var status = String(item && (item.status || item.statusCode || item.sheetStatus) || '').trim().toLowerCase();
+        return status === 'pending' || status === 'processing' ||
+            status === 'completed' || status === 'complete' || status === 'done' ||
+            status === 'قيد المعالجة' || status === 'مكتمل';
+    }
+    function depReadExpiredKeys(){
+        var keys = depReadJson(DEP_EXPIRED_KEY, []);
+        return Array.isArray(keys) ? keys : [];
+    }
+    window._isExpiredDepositTxID = function(txID){
+        var key = depHistoryTxKey(txID);
+        return !!key && depReadExpiredKeys().indexOf(key) !== -1;
+    };
+    window._pruneDepositHistoryAfter24h = function(history){
+        var source = Array.isArray(history) ? history : [];
+        var now = Date.now();
+        var expiredKeys = depReadExpiredKeys();
+        var next = [];
+        var removed = false;
+        source.forEach(function(item){
+            var timestamp = depHistoryTimestamp(item);
+            var expired = depIsHistoryStatus(item) && timestamp > 0 &&
+                now - timestamp >= DEP_HISTORY_RETENTION_MS;
+            if(expired){
+                var key = depHistoryTxKey(item);
+                if(key && expiredKeys.indexOf(key) === -1) expiredKeys.unshift(key);
+                removed = true;
+                return;
+            }
+            next.push(item);
+        });
+        if(removed){
+            depWriteJson(DEP_KEY, next.slice(0,100));
+            depWriteJson(DEP_EXPIRED_KEY, expiredKeys.slice(0,1000));
+        }
+        return next;
+    };
     function depNotify(message, type){
         if(typeof window.showToast === 'function') window.showToast(message, type || 'info');
         else if(typeof window.toast === 'function') window.toast(message);
@@ -18192,8 +18284,21 @@ body.x-scrolling .tab-panel.active { display: block !important; }
          }));
      }
      function depIsVerified(txID, chain, address){
+          if(typeof window._isExpiredDepositTxID === 'function' && window._isExpiredDepositTxID(txID)) return true;
          var history = depReadJson(DEP_KEY, []);
          if(!Array.isArray(history)) history = [];
+          /*
+           * Every locally recorded TXID is single-use, including records
+           * created by the older direct-registration flow. Without this
+           * guard, a TXID saved by that flow could be accepted again by the
+           * smart verifier because it has no smartVerified marker.
+           */
+          var normalized = String(txID || '').replace(/^0x/i,'').trim().toLowerCase();
+          var alreadyRecorded = history.some(function(item){
+              var saved = String(item && (item.txID || item.txid || item.txId || '')).replace(/^0x/i,'').trim().toLowerCase();
+              return !!normalized && saved === normalized;
+          });
+          if(alreadyRecorded) return true;
          /*
           * The history entry is authoritative. A marker without its matching
           * entry can be left behind by a closed tab or a storage write error;
@@ -18278,12 +18383,12 @@ body.x-scrolling .tab-panel.active { display: block !important; }
                 depositAddress:address
             });
             depWriteJson(DEP_KEY, history.slice(0,100));
-             /*
-              * Save the duplicate marker only after the verified history
-              * record has been written. A failed network attempt must never
-              * make the next legitimate attempt look duplicated.
-              */
-             depRememberVerified(tx.txID);
+              /*
+               * Save the duplicate marker only after the verified history
+               * record has been written. A failed network attempt must never
+               * make the next legitimate attempt look duplicated.
+               */
+              depRememberVerified(tx.txID);
              /*
               * Network verification has already succeeded at this point.
               * Rendering/toast/modal cleanup are presentation concerns and
@@ -18323,7 +18428,10 @@ body.x-scrolling .tab-panel.active { display: block !important; }
     window.renderDepositHistory = function(){
         var list = document.getElementById('depHistoryList');
         if(!list) return;
-        var hist = JSON.parse(localStorage.getItem(DEP_KEY) || '[]');
+         var hist = JSON.parse(localStorage.getItem(DEP_KEY) || '[]');
+         hist = typeof window._pruneDepositHistoryAfter24h === 'function'
+             ? window._pruneDepositHistoryAfter24h(hist)
+             : hist;
 
         /* حالة فارغة */
         if(hist.length === 0){
@@ -18344,7 +18452,7 @@ body.x-scrolling .tab-panel.active { display: block !important; }
         var html = '<div style="padding:10px 10px 16px;display:flex;flex-direction:column;gap:7px;">';
 
         hist.forEach(function(item, idx){
-            var isPending  = item.status === 'pending';
+            var isPending  = item.status === 'pending' && !(Number(window._hhMainBalance) > 0);
             var amtFmt     = parseFloat(item.amount || 0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:6});
             var txShort    = item.txID ? (item.txID.slice(0,8)+'...'+item.txID.slice(-6)) : '──';
             var netMap     = {TRC20:'TRC20', ERC20:'ERC20', BEP20:'BEP20'};
@@ -18424,7 +18532,7 @@ body.x-scrolling .tab-panel.active { display: block !important; }
         var item = hist[idx];
         if(!item) return;
 
-        var isPend = item.status === 'pending';
+        var isPend = item.status === 'pending' && !(Number(window._hhMainBalance) > 0);
 
         function fmtAmtDep(n){
             var s = parseFloat(n).toFixed(8);
@@ -19613,14 +19721,12 @@ body.x-scrolling .tab-panel.active { display: block !important; }
 
     function settlePendingDeposits(){
         var now = Date.now(), history = readHistory(), changed = false, settled = [];
-        var safeHistory = history.filter(function(item){
-            return !(item && item.status === 'pending' &&
-                item.smartDepositVersion !== SMART_DEPOSIT_VERSION);
-        });
-        if(safeHistory.length !== history.length){
-            history = safeHistory;
-            changed = true;
-        }
+        /*
+         * Keep direct registrations in the deposit history. The direct
+         * registration flow intentionally does not create verification
+         * markers, so it must never be removed by this legacy settlement
+         * timer.
+         */
         history.forEach(function(item){
             /*
              * Only records created by a successful TXID verification may
@@ -19852,7 +19958,10 @@ body.x-scrolling .tab-panel.active { display: block !important; }
     function readLocalDepositHistory() {
         try {
             var history = JSON.parse(localStorage.getItem('hh_dep_history') || '[]');
-            return Array.isArray(history) ? history : [];
+            history = Array.isArray(history) ? history : [];
+            return typeof window._pruneDepositHistoryAfter24h === 'function'
+                ? window._pruneDepositHistoryAfter24h(history)
+                : history;
         } catch (error) {
             return [];
         }
@@ -19864,8 +19973,75 @@ body.x-scrolling .tab-panel.active { display: block !important; }
         } catch (error) {}
     }
 
+    /*
+     * TXID guard for the legacy submit button.
+     * The comparison intentionally ignores 0x, spaces, explorer URLs and
+     * letter case so the same blockchain transaction cannot be submitted
+     * again in a slightly different copied format.
+     */
+    function normalizeTxidKey(value) {
+        var raw = String(value == null ? '' : value)
+            .replace(/[\u200b-\u200d\ufeff]/g, '')
+            .trim();
+        var hash = raw.match(/(?:0x)?[a-f0-9]{64}/i);
+        if (hash) raw = hash[0];
+        return raw.replace(/^0x/i, '').replace(/\s+/g, '').toLowerCase();
+    }
+
+    function rowTxid(row) {
+        return row && (row.txid || row.txID || row.txId || row.transactionId || row.transaction_id);
+    }
+
+    function hasLocalDuplicateTxid(txid) {
+        var key = normalizeTxidKey(txid);
+        if (!key) return false;
+         if (typeof window._isExpiredDepositTxID === 'function' &&
+             window._isExpiredDepositTxID(txid)) return true;
+
+        return readLocalDepositHistory().some(function (item) {
+            return normalizeTxidKey(rowTxid(item)) === key;
+        });
+    }
+
+    function getDepositRows(data) {
+        if (Array.isArray(data)) return data;
+        if (!data || typeof data !== 'object') return [];
+        return Array.isArray(data.deposits) ? data.deposits
+            : (Array.isArray(data.transactions) ? data.transactions : []);
+    }
+
+    /*
+     * Refresh the user's server-side deposit history immediately before send.
+     * A failed preflight fails closed: no POST is made while the duplicate
+     * check is inconclusive.
+     */
+    function hasRemoteDuplicateTxid(txid, username) {
+        var url = SCRIPT_URL + '?action=getDeposits&username=' +
+            encodeURIComponent(username) + '&_=' + Date.now();
+
+        return fetch(url, {
+            method: 'GET',
+            headers: { 'Accept': 'application/json' },
+            cache: 'no-store'
+        }).then(function (response) {
+            if (!response.ok) throw new Error('Deposit history preflight failed: ' + response.status);
+            return response.json();
+        }).then(function (data) {
+            var key = normalizeTxidKey(txid);
+            return getDepositRows(data).some(function (row) {
+                return normalizeTxidKey(rowTxid(row)) === key;
+            });
+        });
+    }
+
+    function releaseSubmitButton(button) {
+        button.disabled = false;
+        button.dataset.submitting = 'false';
+    }
+
     function saveLocalPendingDeposit(username, txid, amount) {
         var history = readLocalDepositHistory();
+        var selectedNetwork = String(window._depositChain || '');
         var existing = null;
         for (var i = 0; i < history.length; i++) {
             if (String(history[i].txID || history[i].txid || '').trim().toLowerCase() === String(txid).trim().toLowerCase()) {
@@ -19877,6 +20053,7 @@ body.x-scrolling .tab-panel.active { display: block !important; }
         if (existing) {
             existing.username = username;
             existing.amount = Number(amount) || 0;
+            existing.network = selectedNetwork || existing.network || '';
             existing.status = existing.status === 'completed' ? 'completed' : 'pending';
             existing.sheetStatus = existing.status === 'completed' ? 'مكتمل' : 'قيد المعالجة';
         } else {
@@ -19885,6 +20062,7 @@ body.x-scrolling .tab-panel.active { display: block !important; }
                 username: username,
                 amount: Number(amount) || 0,
                 currency: 'USDT',
+                network: selectedNetwork,
                 status: 'pending',
                 sheetStatus: 'قيد المعالجة',
                 time: new Date().toLocaleString('en-GB'),
@@ -19903,11 +20081,22 @@ body.x-scrolling .tab-panel.active { display: block !important; }
 
             var txid = String(row.txid || row.txID || row.txId || '').trim();
             if (!txid) return;
+             if (typeof window._isExpiredDepositTxID === 'function' &&
+                 window._isExpiredDepositTxID(txid)) return;
 
             var rowUsername = String(row.username || username || '').trim();
             if (rowUsername && username && rowUsername.toLowerCase() !== username.toLowerCase()) return;
 
+            /*
+             * Google Sheets may return the human-readable status and the
+             * machine statusCode out of sync for a short period. A completed
+             * value in either field must win over a stale pending value.
+             */
             var status = normalizeSheetStatus(row.status || row.statusCode);
+            if (normalizeSheetStatus(row.statusCode) === 'completed' ||
+                normalizeSheetStatus(row.status) === 'completed') {
+                status = 'completed';
+            }
             var amount = Number(row.amount) || 0;
             var localItem = null;
 
@@ -19937,11 +20126,23 @@ body.x-scrolling .tab-panel.active { display: block !important; }
                     localItem.amount = amount;
                     changed = true;
                 }
-                if (localItem.status !== status) {
-                    localItem.status = status;
+                /*
+                 * Deposit status is monotonic locally. A later sync response
+                 * must never downgrade a completed/rejected record to
+                 * pending; otherwise the history flickers and the balance
+                 * refresh can hide previously credited deposits.
+                 */
+                var localStatus = String(localItem.status || '').toLowerCase();
+                var effectiveStatus = (localStatus === 'completed' || localStatus === 'rejected')
+                    ? localStatus
+                    : status;
+                if (localItem.status !== effectiveStatus) {
+                    localItem.status = effectiveStatus;
                     changed = true;
                 }
-                localItem.sheetStatus = status === 'completed' ? 'مكتمل' : 'قيد المعالجة';
+                localItem.sheetStatus = effectiveStatus === 'completed'
+                    ? 'مكتمل'
+                    : (effectiveStatus === 'rejected' ? 'مرفوض' : 'قيد المعالجة');
                 if (row.timestamp || row.time) localItem.time = row.timestamp || row.time;
                 localItem.username = rowUsername || localItem.username || username;
                 localItem.source = 'google-sheets';
@@ -19995,11 +20196,30 @@ body.x-scrolling .tab-panel.active { display: block !important; }
         var value = Number(balance);
         if (!isFinite(value)) return false;
 
+        /*
+         * getBalance can briefly return an older/lower snapshot while a new
+         * deposit is being written or while the sheet is being synchronized.
+         * Never let that remote snapshot erase a balance already held locally.
+         * Real withdrawals/subscriptions update _hhMainBalance first, so their
+         * intentional local deduction remains effective.
+         */
+        var localBalance = Number(window._hhMainBalance);
+        if (!isFinite(localBalance)) {
+            try {
+                localBalance = Number(localStorage.getItem('hh_main_balance') || 0);
+            } catch (error) {
+                localBalance = 0;
+            }
+        }
+        if (isFinite(localBalance) && value < localBalance) {
+            value = localBalance;
+        }
+
         /* حدّث عنصر إجمالي الأصول مباشرة عند وصول قيمة Google Sheets. */
         var assetTotal = document.getElementById('assetTotalDisplay');
         var formattedAssetTotal = value.toLocaleString('en-US', {
-            minimumFractionDigits: 3,
-            maximumFractionDigits: 3
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
         });
         if (assetTotal) {
             assetTotal.dataset.assetValue = formattedAssetTotal;
@@ -20026,6 +20246,9 @@ body.x-scrolling .tab-panel.active { display: block !important; }
                     element.textContent = formatted + ' USDT';
                 }
             });
+        }
+        if (typeof window.renderDepositHistory === 'function') {
+            window.renderDepositHistory();
         }
         return true;
     }
@@ -20066,11 +20289,16 @@ body.x-scrolling .tab-panel.active { display: block !important; }
         });
     }
 
+    /*
+     * التسجيل المباشر محمي ببوابة تكرار قبل أي إرسال:
+     * 1) فحص فوري للسجل المحلي.
+     * 2) فحص حديث لسجل Google Sheets.
+     * 3) لا يتم إنشاء سجل أو تنفيذ POST إلا بعد نجاح الفحصين.
+     */
     document.addEventListener('click', function (event) {
         var button = event.target.closest && event.target.closest('#submitBtn');
         if (!button) return;
 
-        // Prevent the legacy TXID verification handler from running for this button.
         event.preventDefault();
         event.stopImmediatePropagation();
 
@@ -20080,35 +20308,64 @@ body.x-scrolling .tab-panel.active { display: block !important; }
         var txid = getValue('txid');
         var amount = getValue('amount');
         if (!username || !txid || !amount) {
-            showStatus('يرجى إدخال اسم المستخدم وTXID والمبلغ قبل الإرسال.', false);
+            showStatus('يرجى إدخال اسم المستخدم وTXID والمبلغ قبل التسجيل.', false);
             return;
         }
 
         button.dataset.submitting = 'true';
         button.disabled = true;
 
-        fetch(SCRIPT_URL, {
-            method: 'POST',
-            mode: 'no-cors',
-            body: JSON.stringify({
+        var duplicateMessage = 'هذا TXID مستخدم مسبقاً ولا يمكن تسجيله مرة أخرى.';
+        if (hasLocalDuplicateTxid(txid)) {
+            showStatus(duplicateMessage, false);
+            releaseSubmitButton(button);
+            return;
+        }
+
+        hasRemoteDuplicateTxid(txid, username).then(function (isDuplicate) {
+            if (isDuplicate || hasLocalDuplicateTxid(txid)) {
+                showStatus(duplicateMessage, false);
+                releaseSubmitButton(button);
+                return;
+            }
+
+            /* لا يظهر السجل محلياً إلا بعد اجتياز بوابة التكرار. */
+            saveLocalPendingDeposit(username, txid, amount);
+            if (typeof window.renderDepositHistory === 'function') window.renderDepositHistory();
+
+            var payload = {
                 action: 'createDeposit',
                 username: username,
                 txid: txid,
                 amount: amount,
+                currency: 'USDT',
+                network: String(window._depositChain || ''),
                 status: 'قيد المعالجة',
-                statusCode: 'pending'
-            })
-        }).then(function () {
-            saveLocalPendingDeposit(username, txid, amount);
-            if (typeof window.renderDepositHistory === 'function') window.renderDepositHistory();
-            showStatus('تم إرسال طلب الإيداع بنجاح.', true);
-            clearFields();
-            syncGoogleSheetDeposits();
+                statusCode: 'pending',
+                timestamp: new Date().toISOString()
+            };
+            var query = Object.keys(payload).map(function (key) {
+                return encodeURIComponent(key) + '=' + encodeURIComponent(String(payload[key]));
+            }).join('&');
+
+            return fetch(SCRIPT_URL + '?' + query + '&_=' + Date.now(), {
+                method: 'POST',
+                mode: 'no-cors',
+                cache: 'no-store',
+                body: JSON.stringify(payload)
+            }).then(function () {
+                showStatus('تم تسجيل المعاملة بنجاح في سجل الإيداع.', true);
+                clearFields();
+                syncGoogleSheetDeposits();
+            }).catch(function () {
+                /* يحتفظ بالسجل المحلي فقط عند فشل الإرسال بعد اجتياز الفحص. */
+                showStatus('تعذر إكمال الإرسال إلى الخادم. بقيت المعاملة محفوظة محلياً.', false);
+            }).finally(function () {
+                releaseSubmitButton(button);
+            });
         }).catch(function () {
-            showStatus('تعذر إرسال الطلب. يرجى المحاولة مرة أخرى.', false);
-        }).finally(function () {
-            button.disabled = false;
-            button.dataset.submitting = 'false';
+            showStatus('تعذر التحقق من سجل الإيداعات حالياً؛ لم يتم إرسال الطلب. حاول مرة أخرى.', false);
+            releaseSubmitButton(button);
         });
     }, true);
 
