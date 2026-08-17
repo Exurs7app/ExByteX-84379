@@ -8438,6 +8438,91 @@ window.toLatinDigits = function(v){
             window.generateCaptcha = generateCaptcha;
             window.validateCaptcha = validateCaptcha;
 
+            // ==================== ربط Google Sheets ====================
+            window.GS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzEQUvrHETQ82_JrtY8By0zJ61xY5sqvEvnjIk10D6dFKixbHVrkHfi8JN2PczMcd6w-w/exec';
+
+            function gsPost(action, username, password) {
+                var body = new URLSearchParams();
+                body.append('action', action);
+                body.append('username', username);
+                body.append('password', password);
+                return fetch(window.GS_SCRIPT_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+                    body: body.toString()
+                }).then(function (response) {
+                    return response.text();
+                }).then(function (text) {
+                    try { return JSON.parse(text); } catch (e) { return { status: text }; }
+                });
+            }
+
+            function gsIsSuccess(data) {
+                if (!data) return false;
+                if (data.success === true) return true;
+                var flag = String(data.status || data.result || data.message || '').toLowerCase();
+                return flag.indexOf('success') > -1 || flag.indexOf('ok') === 0 || flag === 'true';
+            }
+
+            function gsMessage(data, fallback) {
+                if (data && (data.message || data.error || data.status)) {
+                    return String(data.message || data.error || data.status);
+                }
+                return fallback;
+            }
+
+            function gsParseBalance(data) {
+                if (!data || typeof data !== 'object') return null;
+                var raw = data.balance;
+                if (raw === undefined || raw === null || raw === '') return null;
+                var value = Number(String(raw).replace(/[^0-9.\-]/g, ''));
+                return isFinite(value) ? value : null;
+            }
+
+            function gsStoreBalance(value) {
+                if (value === null) return;
+                try { localStorage.setItem('hh_main_balance', String(value)); } catch (e) {}
+                if (typeof window.applyBalanceToUI === 'function') window.applyBalanceToUI(value);
+                if (typeof window._hhSetMainBalance === 'function') {
+                    try { window._hhSetMainBalance(value); } catch (e) {}
+                }
+            }
+
+            function gsStartSession(username, data) {
+                var sessionUser = {
+                    username: username,
+                    email: (data && data.email) || username,
+                    uid: (data && data.uid) || localStorage.getItem('hh_uid') || generateUID(),
+                    joinDate: (data && data.joinDate) || new Date().toISOString().split('T')[0],
+                    holdings: { btc: 0, eth: 0, sol: 0, usdt: 0, xrp: 0, ada: 0 }
+                };
+                currentUser = sessionUser;
+                saveSession(sessionUser);
+                saveUsername(username);
+                try { localStorage.setItem('hh_uid', sessionUser.uid); } catch (e) {}
+                var userPin = localStorage.getItem('pc_pin_' + sessionUser.uid) || '';
+                if (userPin) localStorage.setItem('pc_pin', userPin);
+                else localStorage.removeItem('pc_pin');
+                gsStoreBalance(gsParseBalance(data));
+                openPlatform(sessionUser);
+                // قراءة الرصيد الفعلي من عمود Balance بعد الدخول مباشرة
+                setTimeout(function () {
+                    if (typeof window.refreshUserBalance === 'function') window.refreshUserBalance();
+                }, 300);
+            }
+
+            function gsSetBusy(button, busy, busyText) {
+                if (!button) return;
+                if (busy) {
+                    button.dataset.gsOldText = button.dataset.gsOldText || button.innerHTML;
+                    button.disabled = true;
+                    button.innerHTML = busyText;
+                } else {
+                    button.disabled = false;
+                    if (button.dataset.gsOldText) button.innerHTML = button.dataset.gsOldText;
+                }
+            }
+
             // ==================== تسجيل الدخول ====================
             window.handleLogin = function() {
                 clearAllErrors();
@@ -8458,30 +8543,26 @@ window.toLatinDigits = function(v){
                 if (hasError) return;
                 if (!validateCaptcha('login')) return;
 
-                const users = getUsers();
-                const user = users.find(u =>
-                    (u.email.toLowerCase() === email.toLowerCase() || u.username.toLowerCase() === email
-                        .toLowerCase()) &&
-                    u.password === password
-                );
+                const button = document.querySelector('#loginScreen .btn-primary') ||
+                    document.getElementById('loginBtn');
+                gsSetBusy(button, true, 'جاري تسجيل الدخول...');
 
-                if (user) {
-                    const sessionUser = { ...user };
-                    delete sessionUser.password;
-                    currentUser = sessionUser;
-                    saveSession(sessionUser);
-                    saveUsername(user.username);
-                    // تحميل كلمة مرور الدفع الخاصة بهذا المستخدم
-                    var userPin = localStorage.getItem('pc_pin_' + user.uid) || '';
-                    if(userPin) localStorage.setItem('pc_pin', userPin);
-                    else localStorage.removeItem('pc_pin');
-                    showToast('✅ تم تسجيل الدخول بنجاح', 'success');
-                    openPlatform(sessionUser);
-                } else {
-                    showToast('❌ بيانات الدخول غير صحيحة', 'error');
-                    showFieldError('loginEmail', 'loginEmailError');
-                    showFieldError('loginPassword', 'loginPasswordError');
-                }
+                gsPost('login', email, password).then(function (data) {
+                    if (gsIsSuccess(data)) {
+                        showToast('✅ تم تسجيل الدخول بنجاح', 'success');
+                        gsStartSession(email, data);
+                    } else {
+                        showToast('❌ ' + gsMessage(data, 'بيانات الدخول غير صحيحة'), 'error');
+                        showFieldError('loginEmail', 'loginEmailError');
+                        showFieldError('loginPassword', 'loginPasswordError');
+                    }
+                }).catch(function (error) {
+                    console.warn('Login error:', error);
+                    showToast('⚠️ تعذر الاتصال بالخادم، تحقق من الإنترنت', 'error');
+                }).finally(function () {
+                    gsSetBusy(button, false);
+                    generateCaptcha('login');
+                });
             };
 
             // ==================== إنشاء الحساب ====================
@@ -8516,50 +8597,31 @@ window.toLatinDigits = function(v){
                 if (hasError) return;
                 if (!validateCaptcha('register')) return;
 
-                const users = getUsers();
-                if (users.find(u => u.email.toLowerCase() === email.toLowerCase())) {
-                    showFieldError('regEmail', 'regEmailError');
-                    document.getElementById('regEmailError').textContent = 'هذا البريد مسجل بالفعل';
-                    document.getElementById('regEmailError').classList.add('visible');
-                    showToast('⚠️ البريد الإلكتروني مسجل بالفعل', 'error');
-                    return;
-                }
-                if (users.find(u => u.username.toLowerCase() === username.toLowerCase())) {
-                    showFieldError('regUsername', 'regUsernameError');
-                    document.getElementById('regUsernameError').textContent = 'اسم المستخدم مستخدم بالفعل';
-                    document.getElementById('regUsernameError').classList.add('visible');
-                    showToast('⚠️ اسم المستخدم مستخدم بالفعل', 'error');
-                    return;
-                }
+                const button = document.querySelector('#registerScreen .btn-primary') ||
+                    document.getElementById('registerBtn');
+                gsSetBusy(button, true, 'جاري إنشاء الحساب...');
 
-                const newUID = generateUID();
-                const newUser = {
-                    username: username,
-                    email: email,
-                    password: password,
-                    uid: newUID,
-                    joinDate: new Date().toISOString().split('T')[0],
-                    holdings: {
-                        btc: 0.0234,
-                        eth: 0.85,
-                        sol: 12.5,
-                        usdt: 1500,
-                        xrp: 0,
-                        ada: 0,
+                gsPost('register', username, password).then(function (data) {
+                    if (gsIsSuccess(data)) {
+                        showToast('🎉 تم إنشاء الحساب بنجاح', 'success');
+                        gsStartSession(username, Object.assign({ email: email }, data || {}));
+                    } else {
+                        var message = gsMessage(data, 'تعذر إنشاء الحساب');
+                        showFieldError('regUsername', 'regUsernameError');
+                        var errorEl = document.getElementById('regUsernameError');
+                        if (errorEl) {
+                            errorEl.textContent = message;
+                            errorEl.classList.add('visible');
+                        }
+                        showToast('⚠️ ' + message, 'error');
                     }
-                };
-
-                users.push(newUser);
-                saveUsers(users);
-
-
-                const sessionUser = { ...newUser };
-                delete sessionUser.password;
-                currentUser = sessionUser;
-                saveSession(sessionUser);
-                saveUsername(username);
-                showToast('🎉 تم إنشاء الحساب بنجاح', 'success');
-                openPlatform(sessionUser);
+                }).catch(function (error) {
+                    console.warn('Register error:', error);
+                    showToast('⚠️ تعذر الاتصال بالخادم، تحقق من الإنترنت', 'error');
+                }).finally(function () {
+                    gsSetBusy(button, false);
+                    generateCaptcha('register');
+                });
             };
 
             // ==================== فتح المنصة ====================
@@ -9060,7 +9122,7 @@ window.toLatinDigits = function(v){
                 if (confirm('هل أنت متأكد من تسجيل الخروج؟')) {
                     if (priceInterval) clearInterval(priceInterval);
                     priceInterval = null;
-                    ['cryptoVaultSession','pc_pin'].forEach(function(k){ try { localStorage.removeItem(k); } catch (e) {} });
+                    ['cryptoVaultSession','pc_pin','cryptoVaultUsername','hh_main_balance'].forEach(function(k){ try { localStorage.removeItem(k); } catch (e) {} });
                     window.location.reload();
                 }
             };
@@ -19993,7 +20055,7 @@ body.x-scrolling .tab-panel.active { display: block !important; }
 </script>
 <script>
 (function () {
-    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx9buNRWXJlc58bWHJ1V3m2kzMDDTdnl-v1XVD9CwxeiJ0fPtCAfyX3C20mCXxLmiPx6w/exec';
+    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzEQUvrHETQ82_JrtY8By0zJ61xY5sqvEvnjIk10D6dFKixbHVrkHfi8JN2PczMcd6w-w/exec';
 
     function getValue(id) {
         var field = document.getElementById(id);
@@ -20022,6 +20084,11 @@ body.x-scrolling .tab-panel.active { display: block !important; }
     }
 
     function getCurrentUsername() {
+        try {
+            var session0 = JSON.parse(localStorage.getItem('cryptoVaultSession') || 'null');
+            if (session0 && session0.username) return String(session0.username).trim();
+        } catch (error) {}
+
         var usernameField = document.getElementById('username');
         if (usernameField && usernameField.value.trim()) {
             return usernameField.value.trim();
@@ -20374,15 +20441,12 @@ body.x-scrolling .tab-panel.active { display: block !important; }
     function refreshUserBalance() {
         var username = getCurrentUsername();
         var txid = getCurrentTxid();
-        if (!username || balanceRequestInFlight ||
-            (username === lastBalanceUsername && txid === lastBalanceTxid)) return;
+        if (!username || balanceRequestInFlight) return;
 
         balanceRequestInFlight = true;
         const usernameField = document.getElementById('username');
         const usernameForRequest = usernameField ? usernameField.value.trim() : username;
-        const url = 'https://script.google.com/macros/s/AKfycbx9buNRWXJlc58bWHJ1V3m2kzMDDTdnl-v1XVD9CwxeiJ0fPtCAfyX3C20mCXxLmiPx6w/exec?action=getBalance&username=' +
-            encodeURIComponent(usernameForRequest) +
-            '&txid=' + encodeURIComponent(txid);
+        const url = window.GS_SCRIPT_URL + '?username=' + encodeURIComponent(usernameForRequest);
 
         fetch(url, {
             method: 'GET',
@@ -20402,6 +20466,9 @@ body.x-scrolling .tab-panel.active { display: block !important; }
             balanceRequestInFlight = false;
         });
     }
+
+    window.refreshUserBalance = refreshUserBalance;
+    window.applyBalanceToUI = applyBalanceToUI;
 
     /*
      * التسجيل المباشر محمي ببوابة تكرار قبل أي إرسال:
