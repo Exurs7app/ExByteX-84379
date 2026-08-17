@@ -9060,9 +9060,7 @@ window.toLatinDigits = function(v){
                 if (confirm('هل أنت متأكد من تسجيل الخروج؟')) {
                     if (priceInterval) clearInterval(priceInterval);
                     priceInterval = null;
-                    try {
-                        localStorage.clear();
-                    } catch (e) {}
+                    ['cryptoVaultSession','pc_pin'].forEach(function(k){ try { localStorage.removeItem(k); } catch (e) {} });
                     window.location.reload();
                 }
             };
@@ -14596,9 +14594,7 @@ body.light-mode #wdOtpWarnText { color:#b45309 !important; }
   window.pcLogout = function(){
     var _ltlo=window._T&&window._T[window._lang||'ar'];if(typeof toast==='function') toast((_ltlo&&_ltlo.logoutToast)||'👋 تم تسجيل الخروج بنجاح');
     setTimeout(function(){
-      try {
-        localStorage.clear();
-      } catch (e) {}
+      ['cryptoVaultSession','pc_pin'].forEach(function(k){ try { localStorage.removeItem(k); } catch (e) {} });
       window.location.reload();
     }, 1200);
   };
