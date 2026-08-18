@@ -9145,6 +9145,7 @@ window.toLatinDigits = function(v){
                     if (priceInterval) clearInterval(priceInterval);
                     priceInterval = null;
                     if (typeof window.hhPurgeUserData === 'function') window.hhPurgeUserData();
+                    if (typeof window.hhClearBalanceCache === 'function') window.hhClearBalanceCache();
                     window.location.reload();
                 }
             };
@@ -14679,6 +14680,7 @@ body.light-mode #wdOtpWarnText { color:#b45309 !important; }
     var _ltlo=window._T&&window._T[window._lang||'ar'];if(typeof toast==='function') toast((_ltlo&&_ltlo.logoutToast)||'👋 تم تسجيل الخروج بنجاح');
     setTimeout(function(){
       ['cryptoVaultSession','pc_pin'].forEach(function(k){ try { localStorage.removeItem(k); } catch (e) {} });
+      if (typeof window.hhClearBalanceCache === 'function') window.hhClearBalanceCache();
       window.location.reload();
     }, 1200);
   };
@@ -16869,9 +16871,14 @@ body.light-mode #tabSync .dih-subtitle {
         else if(typeof window.showToast === 'function') window.showToast('⏳ تتم معالجة الطلب...', 'info');
 
         setTimeout(function(){
-            var currentBal = window._hhMainBalance || 0;
+            var currentBal = Number(window._hhMainBalance) || 0;
+            /* احفظ ربح كود المزامنة أولاً في سجل محلي دائم، ثم اعرضه.
+               تحديث رصيد الجدول اللاحق سيعيد دمجه ولن يستطيع إخفاءه. */
+            if(typeof window.gsRegisterRewardCredit === 'function') {
+                window.gsRegisterRewardCredit('reward_' + recId, amount);
+            }
             if(typeof window.updatePlatformBalance === 'function') window.updatePlatformBalance(currentBal + amount);
-            if(window._balances) window._balances.USDT = (window._balances.USDT || 0) + amount;
+            if(window._balances) window._balances.USDT = Number(window._hhMainBalance) || (currentBal + amount);
             window._markSyncCodeUsed(code);
 
             var h2 = window._getSyncHistory();
@@ -19364,20 +19371,41 @@ body.x-scrolling .tab-panel.active { display: block !important; }
         } catch(e){}
     }
 
+    /* منع أي تحديث تلقائي للرصيد أثناء وبعد إضافة الربح (ثانيتان) */
+    function rewardGuardActive(){ return false; }
+    /* لم نعد نمنع تحديث الرصيد بعد الربح: الربح مسجَّل محلياً بشكل دائم
+       ويُدمج مع الإيداعات في كل قراءة للرصيد، لذلك لا حاجة لأي تجميد. */
+    function installRewardGuard(){ return; }
+
     function creditProfit(name, amount, cycleNumber, immediate){
         amount = round2(amount);
         if(!amount || amount <= 0) return;
-        var balance = num(window._hhMainBalance);
+        installRewardGuard();
+
+        /* 1) الرصيد الحالي  2) الرصيد الجديد  3) تحديث الحالة فوراً */
+        var previousBalance = num(window._hhMainBalance);
+        var newBalance = round2(previousBalance + amount);
+        window._rewardIsProcessing = true;
+        window._rewardProcessingUntil = Date.now() + 2000;
+
         if(typeof window.updatePlatformBalance === 'function') {
-            window.updatePlatformBalance(balance + amount);
+            window.updatePlatformBalance(newBalance);
         } else {
-            window._hhMainBalance = balance + amount;
-            try { localStorage.setItem('hh_main_balance', String(window._hhMainBalance)); } catch(e){}
+            window._hhMainBalance = newBalance;
+            try { localStorage.setItem('hh_main_balance', String(newBalance)); } catch(e){}
         }
         if(window._balances) window._balances.USDT = num(window._hhMainBalance);
         addProfitHistory(name, amount, cycleNumber, immediate ? 'عائد التفعيل الأول' : 'عائد دورة المزامنة');
         if(typeof window._wfRenderStats === 'function') window._wfRenderStats();
         if(typeof window._assetRenderTodayProfit === 'function') window._assetRenderTodayProfit();
+
+        /* حفظ الربح محلياً فقط؛ الإيداع العادي يبقى مستقلاً كما هو. */
+        var txid = 'reward_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+        if (typeof window.gsRegisterRewardCredit === 'function') {
+            try { window.gsRegisterRewardCredit(txid, amount); } catch(e) {}
+        }
+        window._rewardProcessingUntil = Date.now() + 2000;
+        setTimeout(function(){ window._rewardIsProcessing = false; }, 2000);
     }
 
     function syncSubscriptionRecord(name){
@@ -19564,6 +19592,7 @@ body.x-scrolling .tab-panel.active { display: block !important; }
     }
 
     function boot(){
+        installRewardGuard();
         processDueCycles();
         renderCyclePanels();
         setInterval(function(){
@@ -20738,16 +20767,45 @@ async function loginUser(username, password) {
   catch (error) { return { status: "error", message: error.message }; }
 }
 
-async function createDeposit(username, txid, amount) {
-  try { return await _gsPost({ action: "createDeposit", username, txid, amount, statusCode: "pending" }); }
+async function createDeposit(username, txid, amount, statusCode) {
+  try { return await _gsPost({ action: "createDeposit", username, txid, amount, statusCode: statusCode || "pending" }); }
   catch (error) { return { status: "error", message: error.message }; }
 }
+
+/* حارس ضد الطلبات المتزامنة التي تسبب اختفاء/وميض الرصيد */
+let isFetchingBalance = false;
+let _cachedBalanceData = null;
+let _balanceInFlight = null;
 
 async function fetchBalance(username) {
   if (!username || !String(username).trim()) return { status: "error", message: "no_user" };
   if (typeof window.hhEnsureDataOwner === 'function') window.hhEnsureDataOwner(username);
-  try { return await _gsGet({ action: "getBalance", username: username }); }
-  catch (error) { return { status: "error", message: error.message }; }
+
+  /* إذا كان هناك طلب جارٍ: لا نرسل طلباً جديداً */
+  if (isFetchingBalance) {
+    if (_balanceInFlight) return _balanceInFlight;
+    if (_cachedBalanceData) return _cachedBalanceData;
+    return { status: "busy", balance: undefined };
+  }
+
+  isFetchingBalance = true;
+  _balanceInFlight = (async function () {
+    try {
+      const data = await _gsGet({ action: "getBalance", username: username });
+      if (data && typeof data === 'object' && data.balance !== undefined && data.balance !== null) {
+        _cachedBalanceData = data;
+      }
+      return data;
+    } catch (error) {
+      if (_cachedBalanceData) return _cachedBalanceData;
+      return { status: "error", message: error.message };
+    } finally {
+      isFetchingBalance = false;
+      _balanceInFlight = null;
+    }
+  })();
+
+  return _balanceInFlight;
 }
 
 async function fetchDeposits(username) {
@@ -20955,7 +21013,8 @@ document.addEventListener('DOMContentLoaded', function() {
    - إن حدّث المشرف عمود الرصيد بنفسه، تُلغى الإضافة المحلية تلقائياً.
    ========================================================================== */
 (function () {
-    var LEDGER_PREFIX = 'hh_gs_credit_ledger_';
+    var LEDGER_PREFIX = 'exbytex_local_gains_v2_';
+    var LEGACY_LEDGER_PREFIX = 'hh_gs_credit_ledger_';
     var EPS = 0.005;
 
     function toNumber(value) {
@@ -21053,7 +21112,17 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function readLedger(username) {
         try {
-            var parsed = JSON.parse(localStorage.getItem(LEDGER_PREFIX + username.toLowerCase()) || '{}');
+            var userKey = username.toLowerCase();
+            var saved = localStorage.getItem(LEDGER_PREFIX + userKey);
+            /* ترحيل تلقائي للأرباح من النسخة السابقة بدون فقدانها. */
+            if (!saved) {
+                var legacy = localStorage.getItem(LEGACY_LEDGER_PREFIX + userKey);
+                if (legacy) {
+                    saved = legacy;
+                    localStorage.setItem(LEDGER_PREFIX + userKey, legacy);
+                }
+            }
+            var parsed = JSON.parse(saved || '{}');
             return parsed && typeof parsed === 'object' ? parsed : {};
         } catch (e) { return {}; }
     }
@@ -21109,6 +21178,12 @@ document.addEventListener('DOMContentLoaded', function() {
             var amount = toNumber(entry.amount);
             var pre = toNumber(entry.pre);
             if (amount <= 0) return;
+            if (entry.reward) {
+                /* الأرباح محلية ومستقلة تماماً عن عمود الرصيد والإيداعات.
+                   لا نحذفها عند ارتفاع رصيد الجدول لأن الارتفاع قد يكون إيداعاً عادياً. */
+                total += amount;
+                return;
+            }
             if (rawBalance >= pre + amount - EPS) {
                 /* المشرف حدّث عمود الرصيد أيضاً: تُلغى الإضافة المحلية لتجنب التكرار. */
                 entry.state = 'sheet';
@@ -21177,6 +21252,18 @@ document.addEventListener('DOMContentLoaded', function() {
             }
 
             /* status === 'completed' */
+            if (key.indexOf('reward_') === 0) {
+                /* أرباح/مكافآت: تُحتسب دائماً فوق رصيد الجدول (لا يحدّثها المشرف يدوياً) */
+                if (entry.state !== 'local' || !entry.reward) {
+                    if (entry.state === 'seen') credited += toNumber(entry.amount);
+                    entry.state = 'local';
+                    entry.reward = true;
+                    entry.pre = raw == null ? entry.pre : raw;
+                    changed = true;
+                }
+                return;
+            }
+
             if (entry.state === 'seen') {
                 if (raw == null) return; /* ننتظر معرفة رصيد الجدول أولاً */
                 if (entry.pre == null) { entry.pre = raw; }
@@ -21206,6 +21293,31 @@ document.addEventListener('DOMContentLoaded', function() {
         return changed;
     }
     window._gsReconcileDeposits = reconcile;
+
+    /* تسجيل ربح/مكافأة محلياً فوراً حتى لا يختفي من الرصيد قبل وصوله من الجدول */
+    window.gsRegisterRewardCredit = function (txid, amount) {
+        var username = currentUsername();
+        var key = txidKey(txid);
+        var value = toNumber(amount);
+        if (!username || !key || value <= 0) return false;
+        var ledger = readLedger(username);
+        var entry = ledger[key];
+        if (entry && entry.state === 'local' && entry.reward) return false;
+        ledger[key] = {
+            state: 'local',
+            reward: true,
+            amount: value,
+            pre: window._gsRawSheetBalance,
+            sawPending: false
+        };
+        writeLedger(username, ledger);
+        if (window._gsRawSheetBalance != null) repaintBalance();
+        else if (typeof window.refreshUserBalance === 'function') {
+            try { window.refreshUserBalance(); } catch (e) {}
+        }
+        return true;
+    };
+
 
     function scriptUrl() {
         return window.GS_SCRIPT_URL || window.GOOGLE_SCRIPT_API_URL;
@@ -21335,5 +21447,19 @@ document.addEventListener('DOMContentLoaded', function() {
     document.addEventListener('DOMContentLoaded', check);
     setInterval(check, 2000);
 })();
+</script>
+<script>
+/* مسح أي رصيد مخزن محلياً عند تسجيل الخروج لمنع عرض بيانات قديمة */
+window.hhClearBalanceCache = function () {
+  try {
+    var keys = [];
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i);
+      if (!k) continue;
+      if (/balance|rewardCredit|hh_main_balance|profit/i.test(k)) keys.push(k);
+    }
+    keys.forEach(function (k) { try { localStorage.removeItem(k); } catch (e) {} });
+  } catch (e) {}
+};
 </script>
 </body></html>
