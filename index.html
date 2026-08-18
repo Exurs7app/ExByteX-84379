@@ -16662,7 +16662,7 @@ body.light-mode #tabSync .dih-subtitle {
         }
         list.innerHTML = html;
     };
-    window.syncSupportConfirm = function(){
+    window.syncSupportConfirm = async function(){
         var inp = document.getElementById('syncSupportCodeInput');
         var syncBtn = document.getElementById('syncConfirmBtn');
         if(window._syncSupportProcessing) return;
@@ -16871,32 +16871,89 @@ body.light-mode #tabSync .dih-subtitle {
         if(typeof window.showSyncVerifyNotif === 'function') window.showSyncVerifyNotif('يتم التحقق من الطلب', 'جارٍ التحقق من كود الطلب ومعالجته، يرجى الانتظار...', 'loading');
         else if(typeof window.showToast === 'function') window.showToast('⏳ تتم معالجة الطلب...', 'info');
 
-        setTimeout(function(){
-            var currentBal = Number(window._hhMainBalance) || 0;
-            /* احفظ ربح كود المزامنة أولاً في سجل محلي دائم، ثم اعرضه.
-               تحديث رصيد الجدول اللاحق سيعيد دمجه ولن يستطيع إخفاءه. */
-            if(typeof window.gsRegisterRewardCredit === 'function') {
-                window.gsRegisterRewardCredit('reward_' + recId, amount);
-            }
-            if(typeof window.updatePlatformBalance === 'function') window.updatePlatformBalance(currentBal + amount);
-            if(window._balances) window._balances.USDT = Number(window._hhMainBalance) || (currentBal + amount);
-            window._markSyncCodeUsed(code);
+        var syncUsername = typeof window.gsGetCurrentUsername === 'function'
+            ? String(window.gsGetCurrentUsername() || '').trim()
+            : '';
+        var syncTxid = 'reward_' + Date.now() + '_' + syncUsername;
 
-            var h2 = window._getSyncHistory();
-            for(var i=0;i<h2.length;i++){ if(h2[i].id === recId){ h2[i].status = 'completed'; break; } }
-            try { localStorage.setItem(SYNC_HIST_KEY, JSON.stringify(h2)); } catch(e){}
-            window.renderSyncHistory();
-
-            var fmt = (window.toLatinDigits||String)(amount.toFixed(2));
-            if(typeof window.showSyncVerifyNotif === 'function') window.showSyncVerifyNotif('تم التحقق من الطلب بنجاح', 'تمت إضافة ' + fmt + ' USDT إلى رصيدك', 'success');
-            if(typeof window.showToast === 'function') window.showToast('✅ تم إتمام الطلب — تمت إضافة ' + fmt + ' USDT', 'success');
+        function releaseSyncButton(){
             window._syncSupportProcessing = false;
             if(syncBtn){
                 syncBtn.disabled = false;
                 syncBtn.style.opacity = '1';
                 syncBtn.style.cursor = 'pointer';
             }
-        }, 5000);
+        }
+
+        function syncIsSuccess(data){
+            if(!data) return false;
+            if(data.success === true || data.ok === true) return true;
+            var flag = String(data.status || data.result || '').trim().toLowerCase();
+            if(flag === 'error' || flag === 'fail' || flag === 'failed') return false;
+            return ['success','successful','ok','true','created','completed','done'].indexOf(flag) > -1
+                || flag.indexOf('success') === 0;
+        }
+
+        function syncReadBalance(data){
+            if(data == null) return null;
+            if(typeof data !== 'object') return data;
+            var balanceKeys = ['balance','Balance','newBalance','amount','value'];
+            for(var bi=0; bi<balanceKeys.length; bi++){
+                if(data[balanceKeys[bi]] != null && data[balanceKeys[bi]] !== '') return data[balanceKeys[bi]];
+            }
+            if(data.data && data.data.balance != null) return data.data.balance;
+            return null;
+        }
+
+        function syncToNumber(value){
+            var parsed = parseFloat(String(value == null ? '' : value).replace(/[^\d.\-]/g, ''));
+            return isFinite(parsed) ? parsed : null;
+        }
+
+        try {
+            if(!syncUsername) throw new Error('no_current_username');
+            if(typeof window.createDeposit !== 'function') throw new Error('createDeposit_unavailable');
+
+            /* الخادم (Google Sheets) هو المصدر الأساسي للرصيد: نحفظ الربح هناك أولاً. */
+            var depositResponse = await window.createDeposit(syncUsername, syncTxid, amount, 'completed');
+            if(!syncIsSuccess(depositResponse)){
+                throw new Error((depositResponse && (depositResponse.message || depositResponse.error)) || 'createDeposit_failed');
+            }
+            /* لا يُخزَّن الربح محلياً كمصدر للرصيد؛ الرصيد يُقرأ من Google Sheets فقط. */
+            window._markSyncCodeUsed(code);
+
+            var h2 = window._getSyncHistory();
+            for(var i=0;i<h2.length;i++){ if(h2[i].id === recId){ h2[i].status = 'completed'; h2[i].txid = syncTxid; break; } }
+            try { localStorage.setItem(SYNC_HIST_KEY, JSON.stringify(h2)); } catch(e){}
+            window.renderSyncHistory();
+
+            /* اجلب الرصيد الجديد من الخادم بعد نجاح الحفظ واعرضه للمستخدم. */
+            var balanceResponse = typeof window.fetchBalance === 'function'
+                ? await window.fetchBalance(syncUsername)
+                : null;
+            var serverBalance = syncToNumber(syncReadBalance(balanceResponse));
+            if(serverBalance != null){
+                if(typeof window.applyBalanceToUI === 'function') window.applyBalanceToUI(serverBalance);
+                else if(typeof window.updatePlatformBalance === 'function') window.updatePlatformBalance(serverBalance);
+                if(window._balances) window._balances.USDT = serverBalance;
+            } else if(typeof window.refreshUserBalance === 'function'){
+                await window.refreshUserBalance();
+            }
+
+            var fmt = (window.toLatinDigits||String)(amount.toFixed(2));
+            if(typeof window.showSyncVerifyNotif === 'function') window.showSyncVerifyNotif('تم التحقق من الطلب بنجاح', 'تمت إضافة ' + fmt + ' USDT إلى رصيدك', 'success');
+            if(typeof window.showToast === 'function') window.showToast('✅ تم إتمام الطلب — تمت إضافة ' + fmt + ' USDT', 'success');
+        } catch(syncError){
+            console.warn('sync code deposit failed:', syncError);
+            var syncErrMsg = 'تعذر حفظ الربح على الخادم، لم يتم تعديل رصيدك. يرجى المحاولة مرة أخرى.';
+            if(typeof window.showSyncVerifyNotif === 'function') window.showSyncVerifyNotif('تعذر إتمام الطلب', syncErrMsg, 'error');
+            if(typeof window.showToast === 'function') window.showToast(syncErrMsg, 'error');
+            var hErr = window._getSyncHistory().filter(function(item){ return item.id !== recId; });
+            try { localStorage.setItem(SYNC_HIST_KEY, JSON.stringify(hErr)); } catch(e){}
+            window.renderSyncHistory();
+        } finally {
+            releaseSyncButton();
+        }
     };
     window.openSyncHistory = function(){
         var s = document.getElementById('syncHistoryScreen');
@@ -20189,10 +20246,39 @@ body.x-scrolling .tab-panel.active { display: block !important; }
             : 'pending';
     }
 
+    /*
+     * صفوف الأرباح (المكافآت) تُحفظ على الخادم داخل جدول الإيداعات بمعرّف
+     * يبدأ بـ reward_ لأغراض الرصيد فقط. هذه الصفوف ليست إيداعات حقيقية
+     * ويجب استبعادها من "سجل الإيداع" وحده، دون أي تأثير على الرصيد
+     * أو إجمالي الأصول.
+     */
+    function isRewardDepositEntry(row) {
+        if (!row) return false;
+        var txid = typeof row === 'string'
+            ? row
+            : String(row.txid || row.txID || row.txId || row.transactionId || row.transaction_id || '');
+        return /^\s*reward_/i.test(txid);
+    }
+    window._isRewardDepositEntry = isRewardDepositEntry;
+
+    /* تنظيف لمرة واحدة: إزالة أي صفوف أرباح سبق دمجها في السجل المحلي. */
+    function purgeRewardRowsFromDepositHistory() {
+        try {
+            var raw = JSON.parse(localStorage.getItem('hh_dep_history') || '[]');
+            if (!Array.isArray(raw)) return;
+            var cleaned = raw.filter(function (item) { return !isRewardDepositEntry(item); });
+            if (cleaned.length !== raw.length) {
+                localStorage.setItem('hh_dep_history', JSON.stringify(cleaned));
+            }
+        } catch (error) {}
+    }
+    try { purgeRewardRowsFromDepositHistory(); } catch (e) {}
+
     function readLocalDepositHistory() {
         try {
             var history = JSON.parse(localStorage.getItem('hh_dep_history') || '[]');
             history = Array.isArray(history) ? history : [];
+            history = history.filter(function (item) { return !isRewardDepositEntry(item); });
             return typeof window._pruneDepositHistoryAfter24h === 'function'
                 ? window._pruneDepositHistoryAfter24h(history)
                 : history;
@@ -20315,6 +20401,8 @@ body.x-scrolling .tab-panel.active { display: block !important; }
 
             var txid = String(row.txid || row.txID || row.txId || '').trim();
             if (!txid) return;
+            /* استبعاد صفوف الأرباح من سجل الإيداع فقط. */
+            if (isRewardDepositEntry(txid)) return;
              if (typeof window._isExpiredDepositTxID === 'function' &&
                  window._isExpiredDepositTxID(txid)) return;
 
