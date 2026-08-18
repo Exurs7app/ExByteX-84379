@@ -8530,6 +8530,8 @@ window.toLatinDigits = function(v){
                     if (typeof window.refreshUserBalance === 'function') window.refreshUserBalance();
                 }, 300);
             }
+            /* إتاحة بدء الجلسة لكود ربط Google Sheets الموجود أسفل الصفحة */
+            window.gsStartSession = gsStartSession;
 
             function gsSetBusy(button, busy, busyText) {
                 if (!button) return;
@@ -9142,7 +9144,7 @@ window.toLatinDigits = function(v){
                 if (confirm('هل أنت متأكد من تسجيل الخروج؟')) {
                     if (priceInterval) clearInterval(priceInterval);
                     priceInterval = null;
-                    ['cryptoVaultSession','pc_pin','cryptoVaultUsername','hh_main_balance'].forEach(function(k){ try { localStorage.removeItem(k); } catch (e) {} });
+                    if (typeof window.hhPurgeUserData === 'function') window.hhPurgeUserData();
                     window.location.reload();
                 }
             };
@@ -20449,6 +20451,7 @@ body.x-scrolling .tab-panel.active { display: block !important; }
     }
 
     var balanceRequestInFlight = false;
+    var isBalanceLoading = false;
     var lastBalanceUsername = '';
     var lastBalanceTxid = '';
 
@@ -20465,9 +20468,10 @@ body.x-scrolling .tab-panel.active { display: block !important; }
     function refreshUserBalance() {
         var username = String(getCurrentUsername() || '').trim();
         var txid = getCurrentTxid();
-        if (!username || balanceRequestInFlight) return Promise.resolve();
+        if (!username || balanceRequestInFlight || isBalanceLoading) return Promise.resolve();
 
         balanceRequestInFlight = true;
+        isBalanceLoading = true;
         setBalanceLoading(true);
         /* Cache Buster لمنع قراءة رقم قديم من كاش المتصفح */
         var url = window.GS_SCRIPT_URL + '?username=' + encodeURIComponent(username) +
@@ -20492,14 +20496,25 @@ body.x-scrolling .tab-panel.active { display: block !important; }
             lastBalanceTxid = txid;
         }).catch(function (error) {
             console.warn('تعذر قراءة الرصيد من Google Sheets:', error);
+            var msg = 'تعذر تحديث الرصيد. سيتم الاحتفاظ بالرصيد المحلي حتى يستعيد الاتصال.';
+            if (typeof window.showToast === 'function') window.showToast(msg, 'warning');
+            else if (typeof window.toast === 'function') window.toast(msg);
         }).finally(function () {
             balanceRequestInFlight = false;
+            isBalanceLoading = false;
             setBalanceLoading(false);
         });
     }
 
     window.refreshUserBalance = refreshUserBalance;
     window.applyBalanceToUI = applyBalanceToUI;
+    /* إتاحة الدوال الداخلية للوحدات اللاحقة (كانت محجوبة داخل الـ closure). */
+    window.mergeGoogleSheetDeposits = mergeGoogleSheetDeposits;
+    window.gsGetCurrentUsername = getCurrentUsername;
+    window.gsReadLocalDepositHistory = readLocalDepositHistory;
+    window.gsWriteLocalDepositHistory = writeLocalDepositHistory;
+    window.gsNormalizeTxidKey = normalizeTxidKey;
+    window.gsGetDepositRows = getDepositRows;
 
     /*
      * التسجيل المباشر محمي ببوابة تكرار قبل أي إرسال:
@@ -20584,24 +20599,9 @@ body.x-scrolling .tab-panel.active { display: block !important; }
     // Fetch the balance and Google Sheets deposit history after login data becomes available.
     refreshUserBalance();
     syncGoogleSheetDeposits();
-    setInterval(function () {
-        syncGoogleSheetDeposits();
-        refreshUserBalance();
-    }, 5000);
-    setInterval(function () {
-        lastBalanceUsername = '';
-        lastBalanceTxid = '';
-        syncGoogleSheetDeposits();
-        refreshUserBalance();
-    }, 60000);
-    document.addEventListener('visibilitychange', function () {
-        if (!document.hidden) {
-            lastBalanceUsername = '';
-            lastBalanceTxid = '';
-            syncGoogleSheetDeposits();
-            refreshUserBalance();
-        }
-    });
+    /* تم إزالة تحديث الرصيد التلقائي كل 5 ثوانٍ لمنع الوميض. */
+    /* تم إزالة تحديث الرصيد التلقائي كل 60 ثانية لمنع الوميض. */
+    /* تم إزالة تحديث الرصيد عند عودة التبويب لمنع الوميض. */
 })();
 </script>
 <style id="help-direct-light-mode-fix">
@@ -20697,4 +20697,643 @@ body.x-scrolling .tab-panel.active { display: block !important; }
       window.setTimeout(_moveDirectSupportToTop, 0);
     };
   })();
-</script> </body></html>
+</script> 
+<script>
+/* ===== Google Sheets API Integration (injected) ===== */
+/* ملاحظة: Google Apps Script لا يدعم preflight (OPTIONS)،
+   لذلك نرسل POST كـ simple request بـ text/plain لتفادي "فشل الجلب" */
+const GOOGLE_SCRIPT_API_URL = "https://script.google.com/macros/s/AKfycbw_lJwVxtissXVgA3nqEhhnhM7NVGgV29pW7T026gy0Lght5Gfjl5aTwrVBlDpWf-PeMA/exec";
+
+async function _gsParse(response) {
+  const text = await response.text();
+  try { return JSON.parse(text); }
+  catch (e) { return { status: "error", message: text ? text.slice(0, 300) : "رد غير صالح من الخادم" }; }
+}
+
+async function _gsPost(payload) {
+  const response = await fetch(GOOGLE_SCRIPT_API_URL, {
+    method: "POST",
+    mode: "cors",
+    redirect: "follow",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify(payload)
+  });
+  return await _gsParse(response);
+}
+
+async function _gsGet(params) {
+  const url = new URL(GOOGLE_SCRIPT_API_URL);
+  Object.keys(params).forEach(function (k) { url.searchParams.append(k, params[k]); });
+  const response = await fetch(url.toString(), { method: "GET", mode: "cors", redirect: "follow" });
+  return await _gsParse(response);
+}
+
+async function registerUser(username, password, email) {
+  try { return await _gsPost({ action: "register", username, password, email }); }
+  catch (error) { return { status: "error", message: error.message }; }
+}
+
+async function loginUser(username, password) {
+  try { return await _gsPost({ action: "login", username, password }); }
+  catch (error) { return { status: "error", message: error.message }; }
+}
+
+async function createDeposit(username, txid, amount) {
+  try { return await _gsPost({ action: "createDeposit", username, txid, amount, statusCode: "pending" }); }
+  catch (error) { return { status: "error", message: error.message }; }
+}
+
+async function fetchBalance(username) {
+  if (!username || !String(username).trim()) return { status: "error", message: "no_user" };
+  if (typeof window.hhEnsureDataOwner === 'function') window.hhEnsureDataOwner(username);
+  try { return await _gsGet({ action: "getBalance", username: username }); }
+  catch (error) { return { status: "error", message: error.message }; }
+}
+
+async function fetchDeposits(username) {
+  if (!username || !String(username).trim()) return { status: "error", message: "no_user", deposits: [] };
+  if (typeof window.hhEnsureDataOwner === 'function') window.hhEnsureDataOwner(username);
+  try { return await _gsGet({ action: "getDeposits", username: username }); }
+  catch (error) { return { status: "error", message: error.message }; }
+}
+
+window.GOOGLE_SCRIPT_API_URL = GOOGLE_SCRIPT_API_URL;
+window.registerUser = registerUser;
+window.loginUser = loginUser;
+window.createDeposit = createDeposit;
+window.fetchBalance = fetchBalance;
+window.fetchDeposits = fetchDeposits;
+
+/* ===== UI wiring helpers ===== */
+function _gsApiIsSuccess(data) {
+  if (!data) return false;
+  if (data.success === true || data.ok === true) return true;
+  const flag = String(data.status || data.result || '').trim().toLowerCase();
+  return ['success', 'successful', 'ok', 'true', 'registered', 'logged_in'].indexOf(flag) > -1 ||
+    flag.indexOf('success') === 0 || flag.indexOf('نجاح') > -1 || flag.indexOf('تم') === 0;
+}
+function _gsApiMessage(data, fallback) {
+  if (data && (data.message || data.error || data.status)) {
+    return String(data.message || data.error || data.status);
+  }
+  return fallback;
+}
+function _gsApiBusy(button, busy, busyText) {
+  if (!button) return;
+  if (busy) {
+    button.dataset.gsOldText = button.dataset.gsOldText || button.innerHTML;
+    button.disabled = true;
+    button.innerHTML = busyText;
+  } else {
+    button.disabled = false;
+    if (button.dataset.gsOldText) button.innerHTML = button.dataset.gsOldText;
+  }
+}
+function _gsApiCurrentUsername() {
+  /* يعتمد على مُحدِّد اسم المستخدم الشامل أولاً (جلسات متعددة المفاتيح). */
+  if (typeof window.gsGetCurrentUsername === 'function') {
+    try {
+      const resolved = String(window.gsGetCurrentUsername() || '').trim();
+      if (resolved) return resolved;
+    } catch (e) {}
+  }
+  const keys = ['hh_session', 'cryptoVaultSession'];
+  for (let i = 0; i < keys.length; i++) {
+    try {
+      const raw = localStorage.getItem(keys[i]);
+      if (!raw) continue;
+      const obj = JSON.parse(raw);
+      const value = String((obj && (obj.username || obj.email)) || '').trim();
+      if (value) return value;
+    } catch (e) {}
+  }
+  try {
+    const stored = String(localStorage.getItem('cryptoVaultUsername') || '').trim();
+    if (stored) return stored;
+  } catch (e) {}
+  return '';
+}
+
+/* ===== Override login/register to use the new API functions ===== */
+document.addEventListener('DOMContentLoaded', function() {
+  if (typeof window.handleLogin === 'function') {
+    var originalHandleLogin = window.handleLogin;
+    window.handleLogin = function() {
+      if (typeof clearAllErrors === 'function') clearAllErrors();
+      const emailInput = document.getElementById('loginEmail');
+      const passwordInput = document.getElementById('loginPassword');
+      const username = (emailInput && emailInput.value || '').trim();
+      const password = passwordInput ? passwordInput.value : '';
+      if (!username) { if (typeof showFieldError === 'function') showFieldError('loginEmail', 'loginEmailError'); return; }
+      if (!password) { if (typeof showFieldError === 'function') showFieldError('loginPassword', 'loginPasswordError'); return; }
+      if (typeof validateCaptcha === 'function' && !validateCaptcha('login')) return;
+      const button = document.querySelector('#loginScreen .btn-primary') || document.getElementById('loginBtn');
+      _gsApiBusy(button, true, 'جاري تسجيل الدخول...');
+      loginUser(username, password).then(function(data) {
+        if (_gsApiIsSuccess(data)) {
+          if (typeof showToast === 'function') showToast('✅ تم تسجيل الدخول بنجاح', 'success');
+          if (typeof window.gsStartSession === 'function') {
+            window.gsStartSession(username, data);
+          } else {
+            throw new Error('تعذر فتح المنصة. يرجى تحديث الصفحة والمحاولة مجدداً');
+          }
+        } else {
+          var msg = _gsApiMessage(data, 'بيانات الدخول غير صحيحة');
+          if (typeof showToast === 'function') showToast('❌ ' + msg, 'error');
+          if (typeof showFieldError === 'function') showFieldError('loginEmail', 'loginEmailError');
+          if (typeof showFieldError === 'function') showFieldError('loginPassword', 'loginPasswordError');
+          var loginErrorEl = document.getElementById('loginEmailError');
+          if (loginErrorEl) { loginErrorEl.textContent = msg; loginErrorEl.classList.add('visible'); }
+        }
+      }).catch(function(error) {
+        var msg = error && error.message ? error.message : 'تعذر الاتصال بالخادم، تحقق من الإنترنت';
+        if (typeof showToast === 'function') showToast('⚠️ ' + msg, 'error');
+        var loginErrorEl = document.getElementById('loginEmailError');
+        if (loginErrorEl) { loginErrorEl.textContent = msg; loginErrorEl.classList.add('visible'); }
+      }).finally(function() {
+        _gsApiBusy(button, false);
+        if (typeof generateCaptcha === 'function') generateCaptcha('login');
+      });
+    };
+  }
+
+  if (typeof window.handleRegister === 'function') {
+    var originalHandleRegister = window.handleRegister;
+    window.handleRegister = function() {
+      if (typeof clearAllErrors === 'function') clearAllErrors();
+      const usernameInput = document.getElementById('regUsername');
+      const emailInput = document.getElementById('regEmail');
+      const passwordInput = document.getElementById('regPassword');
+      const confirmInput = document.getElementById('regConfirmPassword');
+      const username = (usernameInput && usernameInput.value || '').trim();
+      const email = (emailInput && emailInput.value || '').trim();
+      const password = passwordInput ? passwordInput.value : '';
+      const confirmPassword = confirmInput ? confirmInput.value : '';
+      let hasError = false;
+      if (username.length < 3) { if (typeof showFieldError === 'function') showFieldError('regUsername', 'regUsernameError'); hasError = true; }
+      if (typeof validateEmail === 'function' && !validateEmail(email)) { if (typeof showFieldError === 'function') showFieldError('regEmail', 'regEmailError'); hasError = true; }
+      if (typeof validatePassword === 'function' && !validatePassword(password)) { if (typeof showFieldError === 'function') showFieldError('regPassword', 'regPasswordError'); hasError = true; }
+      if (password !== confirmPassword) { if (typeof showFieldError === 'function') showFieldError('regConfirmPassword', 'regConfirmError'); hasError = true; }
+      if (hasError) return;
+      if (typeof validateCaptcha === 'function' && !validateCaptcha('register')) return;
+      const button = document.querySelector('#registerScreen .btn-primary') || document.getElementById('registerBtn');
+      _gsApiBusy(button, true, 'جاري إنشاء الحساب...');
+      registerUser(username, password, email).then(function(data) {
+        if (_gsApiIsSuccess(data)) {
+          if (typeof showToast === 'function') showToast('🎉 تم إنشاء الحساب بنجاح', 'success');
+          if (typeof window.gsStartSession === 'function') {
+            window.gsStartSession(username, Object.assign({ email: email }, data || {}));
+          } else {
+            throw new Error('تم إنشاء الحساب ولكن تعذر فتح المنصة. سجّل الدخول بالحساب الجديد');
+          }
+        } else {
+          var msg = _gsApiMessage(data, 'تعذر إنشاء الحساب');
+          if (typeof showFieldError === 'function') showFieldError('regUsername', 'regUsernameError');
+          var errorEl = document.getElementById('regUsernameError');
+          if (errorEl) { errorEl.textContent = msg; errorEl.classList.add('visible'); }
+          if (typeof showToast === 'function') showToast('⚠️ ' + msg, 'error');
+        }
+      }).catch(function(error) {
+        var msg = error && error.message ? error.message : 'تعذر الاتصال بالخادم، تحقق من الإنترنت';
+        if (typeof showToast === 'function') showToast('⚠️ ' + msg, 'error');
+        var registerErrorEl = document.getElementById('regUsernameError');
+        if (registerErrorEl) { registerErrorEl.textContent = msg; registerErrorEl.classList.add('visible'); }
+      }).finally(function() {
+        _gsApiBusy(button, false);
+        if (typeof generateCaptcha === 'function') generateCaptcha('register');
+      });
+    };
+  }
+
+  /* ===== Override balance/deposit readers to use the new API functions ===== */
+  window.refreshUserBalance = function() {
+    const username = String(_gsApiCurrentUsername() || '').trim();
+    if (!username) return Promise.resolve();
+    if (typeof setBalanceLoading === 'function') setBalanceLoading(true);
+    return fetchBalance(username).then(function(data) {
+      var balance = data && typeof data === 'object' ? data.balance : data;
+      if (typeof applyBalanceToUI === 'function') applyBalanceToUI(balance);
+    }).catch(function(error) {
+      console.warn('Balance fetch error:', error);
+    }).finally(function() {
+      if (typeof setBalanceLoading === 'function') setBalanceLoading(false);
+    });
+  };
+
+  window.syncGoogleSheetDeposits = function() {
+    const username = _gsApiCurrentUsername();
+    if (!username || window.depositHistorySyncInFlight) return;
+    window.depositHistorySyncInFlight = true;
+    fetchDeposits(username).then(function(data) {
+      var rows = Array.isArray(data) ? data : (data && (data.deposits || data.transactions || []));
+      if (!Array.isArray(rows)) throw new Error('Invalid deposit history response');
+      if (typeof mergeGoogleSheetDeposits === 'function') mergeGoogleSheetDeposits(rows, username);
+      if (typeof renderDepositHistory === 'function') renderDepositHistory();
+    }).catch(function(error) {
+      console.warn('Deposit sync error:', error);
+    }).finally(function() {
+      window.depositHistorySyncInFlight = false;
+    });
+  };
+
+  /* ===== Global deposit submission helper ===== */
+  window.submitDepositToSheets = function(txid, amount) {
+    const username = _gsApiCurrentUsername();
+    if (!username) { if (typeof showToast === 'function') showToast('يجب تسجيل الدخول أولاً', 'error'); return Promise.resolve({ status: 'error', message: 'Not logged in' }); }
+    return createDeposit(username, txid, amount);
+  };
+});
+</script>
+<script>
+/* ==========================================================================
+   تسوية الإيداعات مع Google Sheets (إصلاح: المبلغ المُدخل في الجدول
+   لم يكن يصل إلى رصيد المستخدم).
+   - قراءة صفوف الإيداع من أي شكل استجابة يرجعه Apps Script.
+   - فهم كل صيغ حالة الموافقة/الرفض (عربية وإنجليزية ورقمية).
+   - اعتماد المبلغ المكتوب في الجدول وإضافته لرصيد المستخدم مرة واحدة فقط
+     (دفتر تسوية محلي لكل مستخدم يمنع الإضافة المزدوجة).
+   - إن حدّث المشرف عمود الرصيد بنفسه، تُلغى الإضافة المحلية تلقائياً.
+   ========================================================================== */
+(function () {
+    var LEDGER_PREFIX = 'hh_gs_credit_ledger_';
+    var EPS = 0.005;
+
+    function toNumber(value) {
+        if (typeof value === 'number') return isFinite(value) ? value : 0;
+        var raw = String(value == null ? '' : value)
+            .replace(/[\u066b]/g, '.')
+            .replace(/[\u0660-\u0669]/g, function (d) { return String(d.charCodeAt(0) - 0x0660); })
+            .replace(/[\u06f0-\u06f9]/g, function (d) { return String(d.charCodeAt(0) - 0x06f0); })
+            .replace(/[^\d.\-]/g, '');
+        var parsed = parseFloat(raw);
+        return isFinite(parsed) ? parsed : 0;
+    }
+
+    function currentUsername() {
+        if (typeof window.gsGetCurrentUsername === 'function') {
+            try { return String(window.gsGetCurrentUsername() || '').trim(); } catch (e) {}
+        }
+        return '';
+    }
+
+    function txidKey(value) {
+        if (typeof window.gsNormalizeTxidKey === 'function') {
+            try { return window.gsNormalizeTxidKey(value); } catch (e) {}
+        }
+        return String(value == null ? '' : value).trim().toLowerCase();
+    }
+
+    function rowTxid(row) {
+        return row && (row.txid || row.txID || row.txId || row.transactionId || row.transaction_id || row.hash);
+    }
+
+    function rowAmount(row) {
+        if (!row) return 0;
+        var candidates = [row.amount, row.Amount, row.value, row.usdt, row.USDT,
+            row['المبلغ'], row['مبلغ'], row['المبلغ الفعلي'], row.creditedAmount, row.credited];
+        for (var i = 0; i < candidates.length; i++) {
+            var parsed = toNumber(candidates[i]);
+            if (parsed > 0) return parsed;
+        }
+        return 0;
+    }
+
+    var COMPLETED = ['completed', 'complete', 'done', 'approved', 'approve', 'success', 'successful',
+        'credited', 'confirmed', 'paid', 'ok', 'yes', 'true', '1',
+        'مكتمل', 'مكتملة', 'تم', 'تمت', 'ناجح', 'ناجحة', 'مؤكد', 'مؤكدة', 'موافق', 'مقبول', 'مقبولة', 'معتمد', 'تم الاعتماد', 'تم الايداع', 'تم الإيداع'];
+    var REJECTED = ['rejected', 'reject', 'failed', 'fail', 'declined', 'cancelled', 'canceled', 'void', 'invalid',
+        'مرفوض', 'مرفوضة', 'ملغي', 'ملغاة', 'فاشل', 'رفض', 'غير صالح'];
+
+    function matches(value, list) {
+        var text = String(value == null ? '' : value).trim().toLowerCase();
+        if (!text) return false;
+        for (var i = 0; i < list.length; i++) {
+            if (text === list[i] || text.indexOf(list[i]) > -1) return true;
+        }
+        return false;
+    }
+
+    function rowStatus(row) {
+        var fields = [row.statusCode, row.status, row.state, row.Status, row['الحالة'], row['حالة'],
+            row.approved, row.approval, row.confirmed];
+        for (var i = 0; i < fields.length; i++) {
+            if (matches(fields[i], REJECTED)) return 'rejected';
+        }
+        for (var j = 0; j < fields.length; j++) {
+            if (matches(fields[j], COMPLETED)) return 'completed';
+        }
+        return 'pending';
+    }
+
+    /* استخراج صفوف الإيداع من أي بنية استجابة (مصفوفة مباشرة أو مفاتيح متعددة). */
+    function extractRows(data) {
+        if (Array.isArray(data)) return data.filter(function (r) { return r && typeof r === 'object'; });
+        if (!data || typeof data !== 'object') return [];
+        var keys = ['deposits', 'transactions', 'rows', 'data', 'records', 'items', 'result', 'results', 'list'];
+        for (var i = 0; i < keys.length; i++) {
+            var value = data[keys[i]];
+            if (Array.isArray(value)) {
+                var rows = value.filter(function (r) { return r && typeof r === 'object'; });
+                if (rows.length || value.length === 0) return rows;
+            } else if (value && typeof value === 'object') {
+                var nested = extractRows(value);
+                if (nested.length) return nested;
+            }
+        }
+        for (var key in data) {
+            if (Array.isArray(data[key])) {
+                var found = data[key].filter(function (r) {
+                    return r && typeof r === 'object' && (rowTxid(r) || rowAmount(r) > 0);
+                });
+                if (found.length) return found;
+            }
+        }
+        return [];
+    }
+
+    function readLedger(username) {
+        try {
+            var parsed = JSON.parse(localStorage.getItem(LEDGER_PREFIX + username.toLowerCase()) || '{}');
+            return parsed && typeof parsed === 'object' ? parsed : {};
+        } catch (e) { return {}; }
+    }
+
+    function writeLedger(username, ledger) {
+        try { localStorage.setItem(LEDGER_PREFIX + username.toLowerCase(), JSON.stringify(ledger)); } catch (e) {}
+    }
+
+    function localHistory() {
+        if (typeof window.gsReadLocalDepositHistory === 'function') {
+            try { return window.gsReadLocalDepositHistory() || []; } catch (e) {}
+        }
+        try {
+            var parsed = JSON.parse(localStorage.getItem('hh_dep_history') || '[]');
+            return Array.isArray(parsed) ? parsed : [];
+        } catch (e) { return []; }
+    }
+
+    /* هل سُجّل هذا الإيداع من هذا الجهاز (أي أن رصيده لم يُضف بعد)؟ */
+    function isOwnPendingDeposit(key) {
+        return localHistory().some(function (item) {
+            return txidKey(item && (item.txID || item.txid)) === key;
+        });
+    }
+
+    function markHistoryCompleted(key, amount) {
+        var history = localHistory();
+        var changed = false;
+        history.forEach(function (item) {
+            if (txidKey(item && (item.txID || item.txid)) !== key) return;
+            if (amount > 0 && toNumber(item.amount) !== amount) { item.amount = amount; changed = true; }
+            if (item.status !== 'completed') { item.status = 'completed'; changed = true; }
+            item.sheetStatus = 'مكتمل';
+        });
+        if (changed && typeof window.gsWriteLocalDepositHistory === 'function') {
+            window.gsWriteLocalDepositHistory(history);
+        }
+        return changed;
+    }
+
+    /* الرصيد الخام كما هو في الجدول (بدون الإضافات المحلية). */
+    window._gsRawSheetBalance = null;
+
+    function outstandingCredits(rawBalance) {
+        var username = currentUsername();
+        if (!username || rawBalance == null) return 0;
+        var ledger = readLedger(username);
+        var total = 0;
+        var changed = false;
+        Object.keys(ledger).forEach(function (key) {
+            var entry = ledger[key];
+            if (!entry || entry.state !== 'local') return;
+            var amount = toNumber(entry.amount);
+            var pre = toNumber(entry.pre);
+            if (amount <= 0) return;
+            if (rawBalance >= pre + amount - EPS) {
+                /* المشرف حدّث عمود الرصيد أيضاً: تُلغى الإضافة المحلية لتجنب التكرار. */
+                entry.state = 'sheet';
+                changed = true;
+                return;
+            }
+            total += amount;
+        });
+        if (changed) writeLedger(username, ledger);
+        return total;
+    }
+    window._gsOutstandingDepositCredits = outstandingCredits;
+
+    /* تغليف تطبيق الرصيد: الرصيد المعروض = رصيد الجدول + الإيداعات المعتمدة غير المضافة. */
+    var originalApply = window.applyBalanceToUI;
+    if (typeof originalApply === 'function' && !originalApply.__gsCreditWrapped) {
+        var wrapped = function (balance) {
+            var raw = toNumber(balance);
+            window._gsRawSheetBalance = raw;
+            return originalApply.call(this, raw + outstandingCredits(raw));
+        };
+        wrapped.__gsCreditWrapped = true;
+        window.applyBalanceToUI = wrapped;
+    }
+
+    function repaintBalance() {
+        if (window._gsRawSheetBalance == null) return;
+        if (typeof window.applyBalanceToUI === 'function') {
+            window.applyBalanceToUI(window._gsRawSheetBalance);
+        }
+    }
+
+    function reconcile(rows) {
+        var username = currentUsername();
+        if (!username) return false;
+        var raw = window._gsRawSheetBalance;
+        var ledger = readLedger(username);
+        var credited = 0;
+        var changed = false;
+
+        rows.forEach(function (row) {
+            var key = txidKey(rowTxid(row));
+            if (!key) return;
+            var rowUser = String(row.username || row.user || '').trim();
+            if (rowUser && rowUser.toLowerCase() !== username.toLowerCase()) return;
+
+            var status = rowStatus(row);
+            var amount = rowAmount(row);
+            var entry = ledger[key];
+            if (!entry) {
+                entry = { state: 'seen', amount: amount, pre: raw == null ? null : raw, sawPending: false };
+                ledger[key] = entry;
+                changed = true;
+            }
+            if (amount > 0 && toNumber(entry.amount) !== amount) { entry.amount = amount; changed = true; }
+
+            if (status === 'rejected') {
+                if (entry.state !== 'void') { entry.state = 'void'; changed = true; }
+                return;
+            }
+
+            if (status === 'pending') {
+                if (raw != null && (entry.pre == null || raw < toNumber(entry.pre))) { entry.pre = raw; changed = true; }
+                entry.sawPending = true;
+                return;
+            }
+
+            /* status === 'completed' */
+            if (entry.state === 'seen') {
+                if (raw == null) return; /* ننتظر معرفة رصيد الجدول أولاً */
+                if (entry.pre == null) { entry.pre = raw; }
+                if (entry.sawPending || isOwnPendingDeposit(key)) {
+                    entry.state = 'local';
+                    credited += toNumber(entry.amount);
+                } else {
+                    /* إيداع قديم ظهر مكتملاً من أول قراءة: يُعتبر مضافاً في الجدول. */
+                    entry.state = 'sheet';
+                }
+                changed = true;
+            }
+            if (entry.state === 'local') markHistoryCompleted(key, toNumber(entry.amount));
+        });
+
+        if (changed) writeLedger(username, ledger);
+
+        if (credited > 0) {
+            repaintBalance();
+            if (typeof window.renderDepositHistory === 'function') window.renderDepositHistory();
+            var text = 'تم اعتماد إيداعك وإضافة ' + credited.toLocaleString('en-US', {
+                minimumFractionDigits: 2, maximumFractionDigits: 2
+            }) + ' USDT إلى رصيدك';
+            if (typeof window.showToast === 'function') window.showToast('✅ ' + text, 'success');
+            else if (typeof window.toast === 'function') window.toast(text, 'success');
+        }
+        return changed;
+    }
+    window._gsReconcileDeposits = reconcile;
+
+    function scriptUrl() {
+        return window.GS_SCRIPT_URL || window.GOOGLE_SCRIPT_API_URL;
+    }
+
+    /* قراءة الرصيد من الجدول بشكل متسامح مع أشكال الاستجابة المختلفة. */
+    window.refreshUserBalance = function () {
+        var username = currentUsername();
+        if (!username || window._gsBalanceInFlight) return Promise.resolve();
+        window._gsBalanceInFlight = true;
+        var url = scriptUrl() + '?action=getBalance&username=' + encodeURIComponent(username) +
+            '&_cb=' + Date.now();
+        return fetch(url, { method: 'GET', mode: 'cors', redirect: 'follow', cache: 'no-store' })
+            .then(function (response) {
+                if (!response.ok) throw new Error('Balance request failed: ' + response.status);
+                return response.text();
+            })
+            .then(function (text) {
+                var data;
+                try { data = JSON.parse(String(text || '').trim()); } catch (e) { data = String(text || '').trim(); }
+                var balance = data;
+                if (data && typeof data === 'object') {
+                    balance = [data.balance, data.Balance, data.amount, data.value,
+                        data['الرصيد'], data.data && data.data.balance]
+                        .find(function (candidate) { return candidate != null && candidate !== ''; });
+                }
+                if (typeof window.applyBalanceToUI === 'function') window.applyBalanceToUI(toNumber(balance));
+            })
+            .catch(function (error) { console.warn('تعذر قراءة الرصيد من Google Sheets:', error); })
+            .finally(function () { window._gsBalanceInFlight = false; });
+    };
+
+    /* مزامنة سجل الإيداعات + تسوية الرصيد. */
+    window.syncGoogleSheetDeposits = function () {
+        var username = currentUsername();
+        if (!username || window._gsDepositSyncInFlight) return Promise.resolve();
+        window._gsDepositSyncInFlight = true;
+        var url = scriptUrl() + '?action=getDeposits&username=' + encodeURIComponent(username) +
+            '&_=' + Date.now();
+        return fetch(url, { method: 'GET', mode: 'cors', redirect: 'follow', cache: 'no-store' })
+            .then(function (response) {
+                if (!response.ok) throw new Error('Deposit history request failed: ' + response.status);
+                return response.text();
+            })
+            .then(function (text) {
+                var data;
+                try { data = JSON.parse(String(text || '').trim()); } catch (e) { data = null; }
+                var rows = extractRows(data);
+                if (typeof window.mergeGoogleSheetDeposits === 'function') {
+                    try { window.mergeGoogleSheetDeposits(rows, username); } catch (e) {}
+                }
+                reconcile(rows);
+                if (typeof window.renderDepositHistory === 'function') window.renderDepositHistory();
+            })
+            .catch(function (error) { console.warn('تعذر قراءة سجل الإيداعات من Google Sheets:', error); })
+            .finally(function () { window._gsDepositSyncInFlight = false; });
+    };
+
+    function cycle() {
+        if (!currentUsername()) return;
+        Promise.resolve(window.refreshUserBalance()).then(function () {
+            return window.syncGoogleSheetDeposits();
+        });
+    }
+    window.gsForceDepositRefresh = cycle;
+
+    cycle();
+    setInterval(cycle, 4000);
+    document.addEventListener('visibilitychange', function () { if (!document.hidden) cycle(); });
+    document.addEventListener('click', function (event) {
+        var target = event.target.closest && event.target.closest('[data-balance-refresh], #assetRefreshIcon, #assetRefreshBtn');
+        if (target) setTimeout(cycle, 60);
+    }, true);
+})();
+</script>
+
+<script>
+/* ===== HH: عزل بيانات المستخدم بين الحسابات ===== */
+(function () {
+    var OWNER_KEY = 'hh_data_owner';
+    function purge() {
+        try {
+            var keys = [];
+            for (var i = 0; i < localStorage.length; i++) {
+                var k = localStorage.key(i);
+                if (k && (k.indexOf('hh_') === 0 || k === 'cryptoVaultSession' || k === 'cryptoVaultUsername' || k === 'pc_pin')) keys.push(k);
+            }
+            keys.forEach(function (k) { try { localStorage.removeItem(k); } catch (e) {} });
+        } catch (e) {}
+        try { sessionStorage.clear(); } catch (e) {}
+        try {
+            window._hhMainBalance = 0;
+            if (typeof currentUser !== 'undefined') { try { currentUser = null; } catch (e) {} }
+            window.currentUser = null;
+        } catch (e) {}
+    }
+    window.hhPurgeUserData = purge;
+
+    // إذا كانت البيانات المخزنة تخص مستخدماً آخر، امسحها فوراً
+    window.hhEnsureDataOwner = function (username) {
+        var u = String(username || '').trim().toLowerCase();
+        if (!u) return;
+        var owner = '';
+        try { owner = String(localStorage.getItem(OWNER_KEY) || '').trim().toLowerCase(); } catch (e) {}
+        if (owner && owner !== u) {
+            var session = null, savedUser = null;
+            try { session = localStorage.getItem('cryptoVaultSession'); savedUser = localStorage.getItem('cryptoVaultUsername'); } catch (e) {}
+            purge();
+            try {
+                if (session) localStorage.setItem('cryptoVaultSession', session);
+                if (savedUser) localStorage.setItem('cryptoVaultUsername', savedUser);
+            } catch (e) {}
+        }
+        try { localStorage.setItem(OWNER_KEY, u); } catch (e) {}
+    };
+
+    // تحقق دوري/مبكر من مالك البيانات
+    function check() {
+        try {
+            if (typeof window.gsGetCurrentUsername === 'function') {
+                var u = window.gsGetCurrentUsername();
+                if (u) window.hhEnsureDataOwner(u);
+            }
+        } catch (e) {}
+    }
+    check();
+    document.addEventListener('DOMContentLoaded', check);
+    setInterval(check, 2000);
+})();
+</script>
+</body></html>
