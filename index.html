@@ -11955,10 +11955,11 @@ body.light-mode #wdOtpWarnText { color:#b45309 !important; }
             changed = true;
 
             var displayAmount = item.refundAmount.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+            var rejectMessage = 'سحب مرفوض — تمت إعادة ' + displayAmount + ' USDT إلى رصيدك';
             if(typeof window.showToast === 'function'){
-                window.showToast('سحب مرفوض', 'info');
+                window.showToast(rejectMessage, 'info');
             }else if(typeof window.toast === 'function'){
-                window.toast('سحب مرفوض');
+                window.toast(rejectMessage);
             }
         }
         if(changed){
@@ -21461,5 +21462,108 @@ window.hhClearBalanceCache = function () {
     keys.forEach(function (k) { try { localStorage.removeItem(k); } catch (e) {} });
   } catch (e) {}
 };
+</script>
+<script id="withdraw-pending-hold-v1">
+(function(){
+    'use strict';
+
+    /*
+     * طبقة حجز مبالغ السحب المعلّقة.
+     *
+     * المشكلة: رصيد المستخدم يُقرأ من Google Sheets كل بضع ثوانٍ ويُطبَّق
+     * كقيمة مطلقة على الرصيد المحلي. الجدول لا يُخصم منه مبلغ السحب، لذلك
+     * كان أي خصم محلي يُلغى عند أول مزامنة فيظهر المبلغ كأنه لم يُخصم.
+     *
+     * الحل: أي طلب سحب بحالة pending يُعتبر "محجوزاً" ويُخصم من الرصيد
+     * القادم من الجدول في كل عملية رسم. عند رفض الطلب بعد 15 دقيقة يُلغى
+     * الحجز تلقائياً فيعود المبلغ المخصوم فقط (بدون الرسوم أو أي زيادة).
+     */
+    var WD_KEY = 'hh_wd_history';
+    var BALANCE_KEY = 'hh_main_balance';
+
+    function readHistory(){
+        try{
+            var value = JSON.parse(localStorage.getItem(WD_KEY) || '[]');
+            return Array.isArray(value) ? value : [];
+        }catch(e){ return []; }
+    }
+
+    function round8(value){
+        var n = Number(value);
+        if(!isFinite(n)) return 0;
+        return Math.round(n * 1e8) / 1e8;
+    }
+
+    /* إجمالي المبالغ المحجوزة حالياً بسبب طلبات سحب قيد المراجعة. */
+    window.hhPendingWithdrawHold = function(){
+        var history = readHistory();
+        var total = 0;
+        for(var i=0;i<history.length;i++){
+            var item = history[i] || {};
+            if(item.status !== 'pending') continue;
+            var amount = Number(item.amount) || 0;
+            if(amount > 0) total += amount;
+        }
+        return round8(total);
+    };
+
+    /*
+     * يُستدعى فقط مباشرة بعد رسم رصيد مطلق قادم من الجدول،
+     * حتى لا يُخصم الحجز مرتين.
+     */
+    function subtractHoldFromCurrentBalance(){
+        var hold = window.hhPendingWithdrawHold();
+        if(hold <= 0) return;
+        var current = Number(window._hhMainBalance) || 0;
+        var target = Math.max(0, round8(current - hold));
+        if(target === current) return;
+        if(typeof window.updatePlatformBalance === 'function'){
+            window.updatePlatformBalance(target);
+        }else{
+            window._hhMainBalance = target;
+            try{ localStorage.setItem(BALANCE_KEY, String(target)); }catch(e){}
+        }
+    }
+
+    function processPending(){
+        if(typeof window.wdProcessPendingWithdrawals !== 'function') return;
+        try{ window.wdProcessPendingWithdrawals(); }catch(e){}
+    }
+
+    /*
+     * تغليف خارجي لدالة تطبيق الرصيد: تحديث حالات الطلبات المستحقة أولاً،
+     * ثم رسم رصيد الجدول كما هو (لتبقى تسوية الإيداعات سليمة)،
+     * ثم خصم المبالغ المحجوزة من القيمة المعروضة والمحفوظة.
+     */
+    var originalApply = window.applyBalanceToUI;
+    if(typeof originalApply === 'function' && !originalApply.__wdHoldWrapped){
+        var wrappedApply = function(){
+            processPending();
+            var result = originalApply.apply(this, arguments);
+            subtractHoldFromCurrentBalance();
+            return result;
+        };
+        wrappedApply.__wdHoldWrapped = true;
+        window.applyBalanceToUI = wrappedApply;
+    }
+
+    /* فحص دوري سريع لتحويل الطلبات المستحقة إلى مرفوضة وإعادة مبلغها. */
+    setInterval(processPending, 5000);
+
+    /*
+     * أول مزامنة بعد التحميل قد تكون سبقت هذه الطبقة، لذلك يُطلب تحديث
+     * الرصيد مرة واحدة ليُعاد رسمه بعد خصم المبالغ المحجوزة.
+     */
+    setTimeout(function(){
+        processPending();
+        if(window.hhPendingWithdrawHold() > 0 && typeof window.refreshUserBalance === 'function'){
+            try{ window.refreshUserBalance(); }catch(e){}
+        }
+    }, 800);
+
+    document.addEventListener('visibilitychange', function(){
+        if(!document.hidden) processPending();
+    });
+})();
 </script>
 </body></html>
