@@ -21179,7 +21179,7 @@ body.x-scrolling .tab-panel.active { display: block !important; }
             var data;
             try { data = JSON.parse(raw); } catch (e) { data = raw; }
             var balance = data && typeof data === 'object' ? data.balance : data;
-            applyBalanceToUI(balance);
+            (window.applyBalanceToUI || applyBalanceToUI)(balance);
             lastBalanceUsername = username;
             lastBalanceTxid = txid;
         }).catch(function (error) {
@@ -21629,7 +21629,8 @@ document.addEventListener('DOMContentLoaded', function() {
     if (typeof setBalanceLoading === 'function') setBalanceLoading(true);
     return fetchBalance(username).then(function(data) {
       var balance = data && typeof data === 'object' ? data.balance : data;
-      if (typeof applyBalanceToUI === 'function') applyBalanceToUI(balance);
+      if (typeof window.applyBalanceToUI === 'function') window.applyBalanceToUI(balance);
+      else if (typeof applyBalanceToUI === 'function') applyBalanceToUI(balance);
     }).catch(function(error) {
       console.warn('Balance fetch error:', error);
     }).finally(function() {
@@ -22531,6 +22532,7 @@ body.light-mode .dpx-insuf-row b{color:#0f172a;}
   /* تطبيق فرق الرصيد فوراً على كل عناصر المنصة (إجمالي الأصول والمحافظ) */
   function applyDelta(d){
     if(!d||!isFinite(d))return;
+    if(typeof window.hhApplyTradeDelta==='function'){try{window.hhApplyTradeDelta(d,ADJ_KEY);return;}catch(e){}}
     setAdj(getAdj()+d);
     var target=Math.max(0,round8(currentBalance()+d));
     if(typeof window.updatePlatformBalance==='function')window.updatePlatformBalance(target);
@@ -22538,6 +22540,8 @@ body.light-mode .dpx-insuf-row b{color:#0f172a;}
   }
   /* تغليف تطبيق رصيد الجدول حتى تبقى تسوية المشتقات فوق أي مزامنة قادمة */
   function wrapBalance(){
+    /* طبقة التسوية الموحّدة (HH SETTLEMENT LAYER) تتكفل بالحفاظ على الأرباح/الخسائر */
+    if(true)return;
     if(window._dpxBalWrapped)return;
     var prev=window.applyBalanceToUI;
     if(typeof prev!=='function')return;
@@ -23681,11 +23685,15 @@ body.light-mode #bsSheet #xbfInline *{color:inherit!important;}
   /* تطبيق فرق حقيقي على إجمالي الأصول (+ ربح / − خسارة) */
   function applyDelta(d) {
     if (!d || !isFinite(d)) return;
+    if (typeof window.hhApplyTradeDelta === 'function') {
+      try { window.hhApplyTradeDelta(d, ADJ); if (typeof window.bsRenderBalance === 'function') { try { window.bsRenderBalance(); } catch (e) {} } return; } catch (e) {}
+    }
     setAdj(getAdj() + d);
     setBalance(balance() + d);
   }
   /* حفاظ على التسوية فوق أي مزامنة قادمة من الجدول */
   (function wrapBal() {
+    window._bxpBalWrapped = true;   /* التسوية الموحّدة تتولى المهمة */
     var tries = 0;
     var iv = setInterval(function () {
       if (window._bxpBalWrapped) { clearInterval(iv); return; }
@@ -23946,4 +23954,127 @@ body.light-mode #bsSheet #xbfInline *{color:inherit!important;}
 })();
 </script>
 
+
+<script>
+/* ================================================================
+   HH SETTLEMENT LAYER — طبقة التسوية المالية الموحّدة (نهائية)
+   • تضمن أن كل صفقة بيع/شراء رابحة تزيد "إجمالي الأصول" فعلياً
+     وكل صفقة خاسرة تنقصه بالكامل، مع الحفاظ على القيمة بعد أي
+     مزامنة قادمة من الخادم/الجدول.
+   • مصدر واحد للحقيقة: رصيد الخادم + صافي تسويات التداول.
+   ================================================================ */
+(function () {
+  'use strict';
+
+  var KEYS = ['bxp_adj_v1', 'hh_dpx_adj'];          /* دفاتر محرّكات التداول */
+  var RAW  = 'hh_raw_sheet_balance';                /* آخر رصيد خام من الخادم */
+
+  function n(v) { var x = parseFloat(v); return isFinite(x) ? x : 0; }
+  function r8(v) { return Math.round(n(v) * 1e8) / 1e8; }
+
+  /* صافي تسويات التداول (أرباح − خسائر − هوامش مفتوحة) */
+  function totalAdj() {
+    var s = 0;
+    for (var i = 0; i < KEYS.length; i++) {
+      try { s += n(localStorage.getItem(KEYS[i])); } catch (e) {}
+    }
+    return r8(s);
+  }
+  window.hhTradingAdjustment = totalAdj;
+
+  function rawBalance() {
+    var v = window._gsRawSheetBalance;
+    if (v == null || !isFinite(parseFloat(v))) { try { v = localStorage.getItem(RAW); } catch (e) {} }
+    return n(v);
+  }
+
+  function paint(value) {
+    value = Math.max(0, r8(value));
+    if (typeof window.updatePlatformBalance === 'function') window.updatePlatformBalance(value);
+    else {
+      window._hhMainBalance = value;
+      try { localStorage.setItem('hh_main_balance', String(value)); } catch (e) {}
+    }
+    try { if (typeof window.syncHomeAssetBalance === 'function') window.syncHomeAssetBalance(); } catch (e) {}
+    try { if (typeof window.bsRenderBalance === 'function') window.bsRenderBalance(); } catch (e) {}
+    try { if (typeof window._wcRenderAssets === 'function') window._wcRenderAssets(); } catch (e) {}
+    try { if (typeof window._wfRenderStats === 'function') window._wfRenderStats(); } catch (e) {}
+    return value;
+  }
+
+  /* إعادة الحساب الحاسمة: الرصيد النهائي = رصيد الخادم + صافي التداول */
+  function reconcile(raw) {
+    if (raw == null) raw = rawBalance();
+    raw = n(raw);
+    try { localStorage.setItem(RAW, String(raw)); } catch (e) {}
+    return paint(raw + totalAdj());
+  }
+  window.hhReconcileBalance = reconcile;
+
+  /* تطبيق فرق فوري (يُستدعى من محرّكات التداول عند الفتح/الإغلاق) */
+  window.hhApplyTradeDelta = function (delta, ledger) {
+    delta = r8(delta);
+    if (!delta) return n(window._hhMainBalance);
+    var key = ledger || KEYS[0];
+    /* ثبّت خط الأساس (رصيد الخادم) قبل أول تسوية حتى تبقى الحسابات دقيقة */
+    var current = n(window._hhMainBalance);
+    if (!(rawBalance() > 0)) {
+      var base = r8(current - totalAdj());
+      if (base > 0) { window._gsRawSheetBalance = base; try { localStorage.setItem(RAW, String(base)); } catch (e) {} }
+    }
+    try { localStorage.setItem(key, String(r8(n(localStorage.getItem(key)) + delta))); } catch (e) {}
+    var target = r8(current + delta);
+    var raw = rawBalance();
+    if (raw > 0) target = r8(raw + totalAdj());   /* مصدر واحد للحقيقة: الخادم + صافي التداول */
+    return paint(target);
+  };
+
+  /* --- جعل طبقتنا الأخيرة دائماً فوق أي مزامنة قادمة من الخادم --- */
+  function installApplyWrapper() {
+    var cur = window.applyBalanceToUI;
+    if (typeof cur !== 'function' || cur._hhSettleOuter) return;
+    var wrapped = function (balance) {
+      var out;
+      try { out = cur.apply(this, arguments); } catch (e) {}
+      try {
+        var raw = n(typeof window.gsSafeNumber === 'function' ? window.gsSafeNumber(balance) : balance);
+        window._gsRawSheetBalance = raw;
+        reconcile(raw);                    /* يتجاوز أي تعديل داخلي مكرّر */
+      } catch (e) {}
+      return out;
+    };
+    wrapped._hhSettleOuter = true;
+    window.applyBalanceToUI = wrapped;
+  }
+  installApplyWrapper();
+  setInterval(installApplyWrapper, 800);
+
+  /* عند الإقلاع: أعد بناء الرصيد من الدفتر حتى لا تضيع الأرباح/الخسائر */
+  function boot() {
+    installApplyWrapper();
+    try {
+      if (!localStorage.getItem('cryptoVaultSession')) return;
+      var adj = totalAdj();
+      if (adj !== 0) {
+        var raw = rawBalance();
+        if (raw > 0) reconcile(raw);
+      }
+    } catch (e) {}
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+  setTimeout(boot, 1500);
+
+  /* تصفير الدفتر عند الخروج/تبديل الحساب */
+  ['hhPurgeUserData', 'pcLogout', 'handleLogout'].forEach(function (name) {
+    var orig = window[name];
+    if (window['_hhSettleWrap_' + name]) return;
+    window['_hhSettleWrap_' + name] = true;
+    window[name] = function () {
+      try { KEYS.concat([RAW]).forEach(function (k) { localStorage.removeItem(k); }); } catch (e) {}
+      if (typeof orig === 'function') return orig.apply(this, arguments);
+    };
+  });
+})();
+</script>
 </body></html>
