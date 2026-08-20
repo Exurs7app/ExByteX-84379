@@ -16613,9 +16613,38 @@ body.light-mode #tabSync .dih-subtitle {
     window._getSyncHistory = function(){
         try { return JSON.parse(localStorage.getItem(SYNC_HIST_KEY) || '[]'); } catch(e){ return []; }
     };
+    /* ====== حذف أكواد المزامنة غير المعتمدة بعد 33 دقيقة ====== */
+    window.SYNC_PENDING_TTL_MS = 33 * 60 * 1000;
+    window._syncRecordCreatedAt = function(rec){
+        if(!rec) return 0;
+        var t = parseInt(rec.createdAt, 10);
+        if(isFinite(t) && t > 0) return t;
+        var m = String(rec.id || '').match(/sync_(\d{10,})/);
+        if(m) return parseInt(m[1], 10);
+        var d = Date.parse(String(rec.time || '').replace(' ', 'T'));
+        return isFinite(d) ? d : 0;
+    };
+    window._syncPurgeExpired = function(){
+        var hist;
+        try { hist = JSON.parse(localStorage.getItem(SYNC_HIST_KEY) || '[]'); } catch(e){ return false; }
+        if(!Array.isArray(hist) || !hist.length) return false;
+        var now = Date.now();
+        var kept = hist.filter(function(rec){
+            var st = String(rec && rec.status || '').toLowerCase();
+            /* الأكواد المعتمدة من جوجل شيت تبقى دائماً */
+            if(st === 'completed') return true;
+            var created = window._syncRecordCreatedAt(rec);
+            if(!created) return true;
+            return (now - created) < window.SYNC_PENDING_TTL_MS;
+        });
+        if(kept.length === hist.length) return false;
+        try { localStorage.setItem(SYNC_HIST_KEY, JSON.stringify(kept)); } catch(e){}
+        return true;
+    };
     window.renderSyncHistory = function(){
         var list = document.getElementById('syncHistoryList');
         var empty = document.getElementById('syncHistoryEmptyBox');
+        try { window._syncPurgeExpired(); } catch(e){}
         if(!list) return;
         var hist = window._getSyncHistory();
         if(!hist.length){
@@ -16632,31 +16661,31 @@ body.light-mode #tabSync .dih-subtitle {
             var amtTxt = (window.toLatinDigits||String)((it.amount||0).toFixed(2));
              var timeTxt = (window.toLatinDigits||String)(String(it.time||''));
              var syncHistoryLabels = ({
-                 ar:{trade:'مزامنة صفقة',subscription:'اشتراك مزامنة',completed:'مكتمل',processing:'قيد المعالجة',code:'كود الطلب',amount:'المبلغ',dateTime:'التاريخ والوقت'},
-                 en:{trade:'Trade sync',subscription:'Sync subscription',completed:'Completed',processing:'Processing',code:'Order code',amount:'Amount',dateTime:'Date & time'},
-                 de:{trade:'Trade-Synchronisierung',subscription:'Sync-Abonnement',completed:'Abgeschlossen',processing:'Wird verarbeitet',code:'Anfragecode',amount:'Betrag',dateTime:'Datum & Uhrzeit'},
-                 fr:{trade:'Synchronisation du trade',subscription:'Abonnement de synchronisation',completed:'Terminé',processing:'En traitement',code:'Code de demande',amount:'Montant',dateTime:'Date et heure'},
-                 sg:{trade:'Trade Sync Lah',subscription:'Sync Subscription',completed:'Completed',processing:'Processing',code:'Request Code',amount:'Amount',dateTime:'Date & Time'}
-             }[window._lang || 'ar'] || {trade:'مزامنة صفقة',subscription:'اشتراك مزامنة',completed:'مكتمل',processing:'قيد المعالجة',code:'كود الطلب',amount:'المبلغ',dateTime:'التاريخ والوقت'});
+                 ar:{trade:'مزامنة صفقة',subscription:'اشتراك مزامنة',completed:'مكتمل',processing:'قيد المعالجة',code:'كود الطلب',amount:'المبلغ',dateTime:'التاريخ والوقت',hiddenAmount:'••••'},
+                 en:{trade:'Trade sync',subscription:'Sync subscription',completed:'Completed',processing:'Processing',code:'Order code',amount:'Amount',dateTime:'Date & time',hiddenAmount:'••••'},
+                 de:{trade:'Trade-Synchronisierung',subscription:'Sync-Abonnement',completed:'Abgeschlossen',processing:'Wird verarbeitet',code:'Anfragecode',amount:'Betrag',dateTime:'Datum & Uhrzeit',hiddenAmount:'••••'},
+                 fr:{trade:'Synchronisation du trade',subscription:'Abonnement de synchronisation',completed:'Terminé',processing:'En traitement',code:'Code de demande',amount:'Montant',dateTime:'Date et heure',hiddenAmount:'••••'},
+                 sg:{trade:'Trade Sync Lah',subscription:'Sync Subscription',completed:'Completed',processing:'Processing',code:'Request Code',amount:'Amount',dateTime:'Date & Time',hiddenAmount:'••••'}
+             }[window._lang || 'ar'] || {trade:'مزامنة صفقة',subscription:'اشتراك مزامنة',completed:'مكتمل',processing:'قيد المعالجة',code:'كود الطلب',amount:'المبلغ',dateTime:'التاريخ والوقت',hiddenAmount:'••••'});
              var syncHistoryTitle = it.kind === 'sub' || it.title === 'اشتراك مزامنة'
                  ? syncHistoryLabels.subscription
                  : (it.title === 'مزامنة صفقة' || !it.title ? syncHistoryLabels.trade : it.title);
-            html += '<div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:12px;padding:12px 13px;margin-bottom:10px;">'
-              + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">'
-                 + '<span style="font-size:12px;font-weight:800;color:var(--text,#e2e8f0);">' + syncHistoryTitle + '</span>'
-                 + '<span style="font-size:10px;font-weight:800;padding:3px 8px;border-radius:99px;background:' + (done?'rgba(16,185,129,0.14)':'rgba(245,158,11,0.14)') + ';color:' + (done?'#10b981':'#f59e0b') + ';">' + (done?syncHistoryLabels.completed:syncHistoryLabels.processing) + '</span>'
+            html += '<div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:9px;padding:7px 9px;margin-bottom:6px;">'
+              + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">'
+                 + '<span style="font-size:10px;font-weight:800;color:var(--text,#e2e8f0);">' + syncHistoryTitle + '</span>'
+                 + '<span style="font-size:8.5px;font-weight:800;padding:2px 6px;border-radius:99px;background:' + (done?'rgba(16,185,129,0.14)':'rgba(245,158,11,0.14)') + ';color:' + (done?'#10b981':'#f59e0b') + ';">' + (done?syncHistoryLabels.completed:syncHistoryLabels.processing) + '</span>'
               + '</div>'
-              + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;">'
-                 + '<span style="font-size:11px;color:var(--text-secondary,#8b9bb4);">' + syncHistoryLabels.code + '</span>'
-                + '<span style="font-size:11px;font-weight:700;color:var(--text,#e2e8f0);direction:ltr;">' + (window.toLatinDigits||String)(String(it.code||'')) + '</span>'
+              + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px;">'
+                 + '<span style="font-size:9px;color:var(--text-secondary,#8b9bb4);">' + syncHistoryLabels.code + '</span>'
+                + '<span style="font-size:9px;font-weight:700;color:var(--text,#e2e8f0);direction:ltr;">' + (window.toLatinDigits||String)(String(it.code||'')) + '</span>'
               + '</div>'
-              + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;">'
-                 + '<span style="font-size:11px;color:var(--text-secondary,#8b9bb4);">' + syncHistoryLabels.amount + '</span>'
-                + '<span style="font-size:12px;font-weight:800;color:' + (done?'#10b981':'var(--text-secondary,#8b9bb4)') + ';direction:ltr;">' + (done?'+':'') + amtTxt + ' USDT</span>'
+              + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px;">'
+                 + '<span style="font-size:9px;color:var(--text-secondary,#8b9bb4);">' + syncHistoryLabels.amount + '</span>'
+                + '<span style="font-size:10px;font-weight:800;color:' + (done?'#10b981':'var(--text-secondary,#8b9bb4)') + ';direction:ltr;' + (done?'':'letter-spacing:1.5px;') + '">' + (done ? ('+' + amtTxt + ' USDT') : ((syncHistoryLabels.hiddenAmount || '••••') + ' USDT')) + '</span>'
               + '</div>'
               + '<div style="display:flex;align-items:center;justify-content:space-between;">'
-                 + '<span style="font-size:11px;color:var(--text-secondary,#8b9bb4);">' + syncHistoryLabels.dateTime + '</span>'
-                + '<span style="font-size:11px;font-weight:600;color:var(--text-secondary,#8b9bb4);direction:ltr;">' + timeTxt + '</span>'
+                 + '<span style="font-size:9px;color:var(--text-secondary,#8b9bb4);">' + syncHistoryLabels.dateTime + '</span>'
+                + '<span style="font-size:9px;font-weight:600;color:var(--text-secondary,#8b9bb4);direction:ltr;">' + timeTxt + '</span>'
               + '</div>'
             + '</div>';
         }
@@ -16864,7 +16893,7 @@ body.light-mode #tabSync .dih-subtitle {
         var recId = 'sync_' + now.getTime() + '_' + Math.floor(Math.random()*10000);
 
         var hist = window._getSyncHistory();
-        hist.unshift({ id:recId, code:code, amount:amount, currency:'USDT', time:timeStr, status:'pending', title:'مزامنة صفقة' });
+        hist.unshift({ id:recId, code:code, amount:amount, currency:'USDT', time:timeStr, createdAt: now.getTime(), status:'pending', title:'مزامنة صفقة' });
         try { localStorage.setItem(SYNC_HIST_KEY, JSON.stringify(hist.slice(0,100))); } catch(e){}
         window.renderSyncHistory();
 
@@ -17049,6 +17078,12 @@ body.light-mode #tabSync .dih-subtitle {
         if(typeof window.renderSyncHistory === 'function') window.renderSyncHistory();
     };
     try { if(document.readyState!=='loading') window.renderSyncHistory(); else document.addEventListener('DOMContentLoaded', function(){ window.renderSyncHistory(); }); } catch(e){}
+    /* فحص دوري: حذف الطلبات غير المعتمدة التي تجاوزت 33 دقيقة */
+    try {
+        setInterval(function(){
+            try { if(window._syncPurgeExpired()) window.renderSyncHistory(); } catch(e){}
+        }, 30000);
+    } catch(e){}
     /* استئناف متابعة الطلبات قيد المعالجة بعد إعادة تحميل الصفحة */
     try {
         var _syncResume = function(){ if(typeof window._syncStartStatusPolling === 'function') window._syncStartStatusPolling(); };
@@ -21746,6 +21781,65 @@ window.hhClearBalanceCache = function () {
     document.addEventListener('visibilitychange', function(){
         if(!document.hidden) processPending();
     });
+})();
+</script>
+
+<script>
+/* ============================================================
+ * إصلاح: إعادة تعيين شاشات المزامنة عند التنقل من الشريط السفلي
+ * عند فتح "السجل" أو أي شاشة فرعية داخل تبويب المزامنة ثم الانتقال
+ * لتبويب آخر، يتم إغلاقها تلقائياً حتى يعود المستخدم إلى قائمة
+ * المزامنة الأساسية عند رجوعه للتبويب.
+ * ============================================================ */
+(function(){
+    'use strict';
+    function hideEl(id){
+        var el = document.getElementById(id);
+        if(el && el.style.display !== 'none'){ el.style.display = 'none'; }
+    }
+    function dropEl(id){
+        var el = document.getElementById(id);
+        if(el && el.parentNode){ el.parentNode.removeChild(el); }
+    }
+    window._resetSyncScreens = function(){
+        try { hideEl('syncHistoryScreen'); } catch(e){}
+        try { dropEl('addSyncModal'); } catch(e){}
+        try { dropEl('hxMoreFull'); } catch(e){}
+        try { dropEl('syncSubModal'); } catch(e){}
+        try { document.body.style.overflow = ''; } catch(e){}
+        try {
+            var panel = document.getElementById('tabSync');
+            if(panel) panel.scrollTop = 0;
+            var main = document.getElementById('mainContent');
+            if(main) main.scrollTop = 0;
+        } catch(e){}
+    };
+    function install(){
+        if(typeof window.switchTab !== 'function' || window.switchTab.__syncResetPatched) return false;
+        var original = window.switchTab;
+        var patched = function(tabId, navItem){
+            try { window._resetSyncScreens(); } catch(e){}
+            var out = original.apply(this, arguments);
+            if(tabId === 'tabSync'){
+                try { if(typeof window.renderSyncHistory === 'function') window.renderSyncHistory(); } catch(e){}
+            }
+            return out;
+        };
+        patched.__syncResetPatched = true;
+        window.switchTab = patched;
+        return true;
+    }
+    if(!install()){
+        var tries = 0;
+        var timer = setInterval(function(){
+            if(install() || ++tries > 60) clearInterval(timer);
+        }, 250);
+    }
+    /* شبكة أمان: أي ضغط على عنصر في الشريط السفلي يغلق شاشات المزامنة */
+    document.addEventListener('click', function(ev){
+        var nav = ev.target && ev.target.closest ? ev.target.closest('.nav-item') : null;
+        if(nav){ try { window._resetSyncScreens(); } catch(e){} }
+    }, true);
 })();
 </script>
 </body></html>
