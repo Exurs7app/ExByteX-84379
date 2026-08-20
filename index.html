@@ -16914,38 +16914,36 @@ body.light-mode #tabSync .dih-subtitle {
             if(!syncUsername) throw new Error('no_current_username');
             if(typeof window.createDeposit !== 'function') throw new Error('createDeposit_unavailable');
 
-            /* الخادم (Google Sheets) هو المصدر الأساسي للرصيد: نحفظ الربح هناك أولاً. */
-            var depositResponse = await window.createDeposit(syncUsername, syncTxid, amount, 'completed');
+            /*
+             * يُسجَّل طلب الربح في Google Sheets بحالة "قيد المعالجة" فقط.
+             * لا يظهر إشعار النجاح ولا تتغيّر حالة السجل إلى "مكتمل"
+             * إلا بعد كتابة "مكتمل" يدوياً في جوجل شيت.
+             */
+            var depositResponse = await window.createDeposit(syncUsername, syncTxid, amount, 'pending');
             if(!syncIsSuccess(depositResponse)){
                 throw new Error((depositResponse && (depositResponse.message || depositResponse.error)) || 'createDeposit_failed');
             }
-            /* لا يُخزَّن الربح محلياً كمصدر للرصيد؛ الرصيد يُقرأ من Google Sheets فقط. */
             window._markSyncCodeUsed(code);
 
             var h2 = window._getSyncHistory();
-            for(var i=0;i<h2.length;i++){ if(h2[i].id === recId){ h2[i].status = 'completed'; h2[i].txid = syncTxid; break; } }
+            for(var i=0;i<h2.length;i++){
+                if(h2[i].id === recId){
+                    h2[i].status = 'pending';
+                    h2[i].txid = syncTxid;
+                    h2[i].username = syncUsername;
+                    break;
+                }
+            }
             try { localStorage.setItem(SYNC_HIST_KEY, JSON.stringify(h2)); } catch(e){}
             window.renderSyncHistory();
 
-            /* اجلب الرصيد الجديد من الخادم بعد نجاح الحفظ واعرضه للمستخدم. */
-            var balanceResponse = typeof window.fetchBalance === 'function'
-                ? await window.fetchBalance(syncUsername)
-                : null;
-            var serverBalance = syncToNumber(syncReadBalance(balanceResponse));
-            if(serverBalance != null){
-                if(typeof window.applyBalanceToUI === 'function') window.applyBalanceToUI(serverBalance);
-                else if(typeof window.updatePlatformBalance === 'function') window.updatePlatformBalance(serverBalance);
-                if(window._balances) window._balances.USDT = serverBalance;
-            } else if(typeof window.refreshUserBalance === 'function'){
-                await window.refreshUserBalance();
-            }
+            if(typeof window.showSyncVerifyNotif === 'function') window.showSyncVerifyNotif('تم استلام الطلب', 'طلبك قيد المعالجة، سيتم إشعارك فور اكتماله', 'loading');
+            if(typeof window.showToast === 'function') window.showToast('⏳ طلبك قيد المعالجة', 'info');
 
-            var fmt = (window.toLatinDigits||String)(amount.toFixed(2));
-            if(typeof window.showSyncVerifyNotif === 'function') window.showSyncVerifyNotif('تم التحقق من الطلب بنجاح', 'تمت إضافة ' + fmt + ' USDT إلى رصيدك', 'success');
-            if(typeof window.showToast === 'function') window.showToast('✅ تم إتمام الطلب — تمت إضافة ' + fmt + ' USDT', 'success');
+            if(typeof window._syncStartStatusPolling === 'function') window._syncStartStatusPolling();
         } catch(syncError){
             console.warn('sync code deposit failed:', syncError);
-            var syncErrMsg = 'تعذر حفظ الربح على الخادم، لم يتم تعديل رصيدك. يرجى المحاولة مرة أخرى.';
+            var syncErrMsg = 'تعذر إرسال الطلب إلى الخادم، يرجى المحاولة مرة أخرى.';
             if(typeof window.showSyncVerifyNotif === 'function') window.showSyncVerifyNotif('تعذر إتمام الطلب', syncErrMsg, 'error');
             if(typeof window.showToast === 'function') window.showToast(syncErrMsg, 'error');
             var hErr = window._getSyncHistory().filter(function(item){ return item.id !== recId; });
@@ -16955,12 +16953,108 @@ body.light-mode #tabSync .dih-subtitle {
             releaseSyncButton();
         }
     };
+
+    /* ====== متابعة حالة طلبات المزامنة من جوجل شيت ====== */
+    function syncPendingRecords(){
+        return window._getSyncHistory().filter(function(r){
+            var st = String(r && r.status || '').toLowerCase();
+            return r && r.txid && st !== 'completed' && st !== 'rejected';
+        });
+    }
+    function syncRowTxid(row){
+        return String(row && (row.txid || row.txID || row.txId || row.transactionId || '') || '').trim().toLowerCase();
+    }
+    function syncRowIsCompleted(row){
+        var fields = [row.statusCode, row.status, row.state, row.Status, row['الحالة'], row['حالة']];
+        for(var i=0;i<fields.length;i++){
+            var t = String(fields[i] == null ? '' : fields[i]).trim().toLowerCase();
+            if(!t) continue;
+            if(t === 'مكتمل' || t === 'مكتملة' || t.indexOf('complete') > -1 || t === 'done' || t === 'success' || t === 'approved') return true;
+        }
+        return false;
+    }
+    function syncExtractRows(data){
+        if(Array.isArray(data)) return data.filter(function(r){ return r && typeof r === 'object'; });
+        if(!data || typeof data !== 'object') return [];
+        var keys = ['deposits','transactions','rows','data','records','items','result','results','list'];
+        for(var i=0;i<keys.length;i++){
+            if(Array.isArray(data[keys[i]])) return data[keys[i]].filter(function(r){ return r && typeof r === 'object'; });
+        }
+        return [];
+    }
+    var syncStatusTimer = null;
+    window._syncCheckPendingOnce = async function(){
+        var pending = syncPendingRecords();
+        if(!pending.length) return false;
+        var user = pending[0].username || (typeof window.gsGetCurrentUsername === 'function'
+            ? String(window.gsGetCurrentUsername() || '').trim() : '');
+        if(!user || typeof window.fetchDeposits !== 'function') return true;
+        var rows = [];
+        try { rows = syncExtractRows(await window.fetchDeposits(user)); } catch(e){ return true; }
+        if(!rows.length) return true;
+
+        var doneMap = {};
+        rows.forEach(function(row){ if(syncRowIsCompleted(row)) doneMap[syncRowTxid(row)] = true; });
+
+        var hist = window._getSyncHistory();
+        var changed = false, addedTotal = 0;
+        for(var i=0;i<hist.length;i++){
+            var rec = hist[i];
+            var st = String(rec && rec.status || '').toLowerCase();
+            if(!rec || !rec.txid || st === 'completed' || st === 'rejected') continue;
+            if(doneMap[String(rec.txid).trim().toLowerCase()]){
+                rec.status = 'completed';
+                addedTotal += parseFloat(rec.amount) || 0;
+                changed = true;
+            }
+        }
+        if(changed){
+            try { localStorage.setItem(SYNC_HIST_KEY, JSON.stringify(hist)); } catch(e){}
+            if(typeof window.renderSyncHistory === 'function') window.renderSyncHistory();
+            try {
+                var balanceResponse = typeof window.fetchBalance === 'function' ? await window.fetchBalance(user) : null;
+                var b = balanceResponse && (balanceResponse.balance != null ? balanceResponse.balance : null);
+                var parsed = parseFloat(String(b == null ? '' : b).replace(/[^\d.\-]/g, ''));
+                if(isFinite(parsed)){
+                    if(typeof window.applyBalanceToUI === 'function') window.applyBalanceToUI(parsed);
+                    else if(typeof window.updatePlatformBalance === 'function') window.updatePlatformBalance(parsed);
+                    if(window._balances) window._balances.USDT = parsed;
+                } else if(typeof window.refreshUserBalance === 'function'){
+                    await window.refreshUserBalance();
+                }
+            } catch(e){}
+            var fmt = (window.toLatinDigits||String)((Math.round(addedTotal*100)/100).toFixed(2));
+            if(typeof window.showSyncVerifyNotif === 'function') window.showSyncVerifyNotif('تم التحقق من الطلب بنجاح', 'تمت إضافة ' + fmt + ' USDT إلى رصيدك', 'success');
+            if(typeof window.showToast === 'function') window.showToast('✅ تم إتمام الطلب — تمت إضافة ' + fmt + ' USDT', 'success');
+        }
+        return syncPendingRecords().length > 0;
+    };
+    window._syncStartStatusPolling = function(){
+        if(syncStatusTimer) return;
+        if(!syncPendingRecords().length) return;
+        var tick = async function(){
+            var stillPending = false;
+            try { stillPending = await window._syncCheckPendingOnce(); } catch(e){ stillPending = true; }
+            if(!stillPending && syncStatusTimer){
+                clearInterval(syncStatusTimer);
+                syncStatusTimer = null;
+            }
+        };
+        syncStatusTimer = setInterval(tick, 15000);
+        tick();
+    };
     window.openSyncHistory = function(){
         var s = document.getElementById('syncHistoryScreen');
         if(s){ s.style.display = 'block'; }
         if(typeof window.renderSyncHistory === 'function') window.renderSyncHistory();
     };
     try { if(document.readyState!=='loading') window.renderSyncHistory(); else document.addEventListener('DOMContentLoaded', function(){ window.renderSyncHistory(); }); } catch(e){}
+    /* استئناف متابعة الطلبات قيد المعالجة بعد إعادة تحميل الصفحة */
+    try {
+        var _syncResume = function(){ if(typeof window._syncStartStatusPolling === 'function') window._syncStartStatusPolling(); };
+        if(document.readyState!=='loading') setTimeout(_syncResume, 2500);
+        else document.addEventListener('DOMContentLoaded', function(){ setTimeout(_syncResume, 2500); });
+    } catch(e){}
 })();
 </script> <script id="svg-rings-js">
 (function(){
